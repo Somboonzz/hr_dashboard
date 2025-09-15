@@ -2,6 +2,8 @@ import streamlit as st
 import pandas as pd
 import altair as alt
 import datetime
+import io
+import os
 
 st.set_page_config(page_title="HR Dashboard", layout="wide")
 
@@ -22,27 +24,32 @@ def format_thai_month(period):
     return f"{month} {year}"
 
 # -----------------------------
-# ฟังก์ชันโหลด Excel สดทุกครั้ง
+# โหลดไฟล์ Excel (จาก repo หรือ uploader)
 # -----------------------------
-FILE_PATH = "attendances.xlsx"
-
-def load_data():
+def load_data(file_path=None, uploaded_file=None):
     try:
-        with open(FILE_PATH, "rb") as f:
-            df = pd.read_excel(f)
+        if uploaded_file:
+            df = pd.read_excel(uploaded_file, engine='openpyxl')
+        elif file_path and os.path.exists(file_path):
+            df = pd.read_excel(file_path, engine='openpyxl')
+        else:
+            return pd.DataFrame()
         return df
     except Exception as e:
         st.error(f"❌ อ่านไฟล์ Excel ไม่ได้: {e}")
         return pd.DataFrame()
 
 # -----------------------------
-# ปุ่ม Refresh Manual
+# ปุ่ม Refresh
 # -----------------------------
 if st.button("🔄 Refresh ข้อมูล (Manual)"):
     st.experimental_rerun()
 
-# โหลดข้อมูลสดทุกครั้ง
-df = load_data()
+# -----------------------------
+# ตัวเลือกอัปโหลดไฟล์บน Cloud
+# -----------------------------
+uploaded_file = st.file_uploader("อัปโหลดไฟล์ Excel (ถ้าไม่มีบน repo)", type=["xlsx"])
+df = load_data(file_path="attendances.xlsx", uploaded_file=uploaded_file)
 
 # -----------------------------
 # นาฬิกา
@@ -58,7 +65,6 @@ st.markdown(
 # ถ้า df มีข้อมูล
 # -----------------------------
 if not df.empty:
-    # Clean Data
     for col in ["ชื่อ-สกุล", "แผนก", "ข้อยกเว้น"]:
         if col in df.columns:
             df[col] = df[col].astype(str).str.strip().str.replace(r"\s+", " ", regex=True)
@@ -69,22 +75,19 @@ if not df.empty:
     if "วันที่" in df.columns:
         df["วันที่"] = pd.to_datetime(df["วันที่"], errors='coerce')
 
-    # Filter ปี + เดือน + แผนก + ชื่อ
     if "วันที่" in df.columns:
         df["ปี"] = df["วันที่"].dt.year + 543
         df["เดือน"] = df["วันที่"].dt.to_period("M")
 
     df_filtered = df.copy()
 
-    # Filter ปี
-    if "ปี" in df_filtered.columns:
-        years = ["-- แสดงทั้งหมด --"] + sorted(df["ปี"].dropna().unique(), reverse=True)
-        selected_year = st.selectbox("📆 เลือกปี", years)
-        if selected_year != "-- แสดงทั้งหมด --":
-            selected_year = int(selected_year)
-            df_filtered = df_filtered[df_filtered["ปี"] == selected_year]
+    # --- Filter ปี
+    years = ["-- แสดงทั้งหมด --"] + sorted(df["ปี"].dropna().unique(), reverse=True)
+    selected_year = st.selectbox("📆 เลือกปี", years)
+    if selected_year != "-- แสดงทั้งหมด --":
+        df_filtered = df_filtered[df_filtered["ปี"] == int(selected_year)]
 
-    # Filter เดือน
+    # --- Filter เดือน
     if "เดือน" in df_filtered.columns and not df_filtered.empty:
         available_months = sorted(df_filtered["เดือน"].dropna().unique())
         month_options = ["-- แสดงทั้งหมด --"] + [format_thai_month(m) for m in available_months]
@@ -94,16 +97,13 @@ if not df.empty:
             selected_period = mapping[selected_month]
             df_filtered = df_filtered[df_filtered["เดือน"].astype(str) == selected_period]
 
-    # Filter แผนก
-    if "แผนก" in df_filtered.columns and not df_filtered.empty:
-        departments = ["-- แสดงทั้งหมด --"] + sorted(df_filtered["แผนก"].dropna().unique())
-        selected_dept = st.selectbox("🏢 เลือกแผนก", departments)
-        if selected_dept != "-- แสดงทั้งหมด --":
-            df_filtered = df_filtered[df_filtered["แผนก"] == selected_dept]
+    # --- Filter แผนก
+    departments = ["-- แสดงทั้งหมด --"] + sorted(df_filtered["แผนก"].dropna().unique())
+    selected_dept = st.selectbox("🏢 เลือกแผนก", departments)
+    if selected_dept != "-- แสดงทั้งหมด --":
+        df_filtered = df_filtered[df_filtered["แผนก"] == selected_dept]
 
-    # -----------------------------
-    # คำนวณประเภทการลา
-    # -----------------------------
+    # --- คำนวณประเภทการลา
     def leave_days(row):
         if "ครึ่งวัน" in str(row):
             return 0.5
@@ -119,12 +119,9 @@ if not df.empty:
     df_filtered["พักผ่อน"] = df_filtered["ข้อยกเว้น"].apply(lambda x: 1 if str(x) == "พักผ่อน" else 0)
 
     leave_types = ["ลาป่วย/ลากิจ", "ขาด", "สาย", "พักผ่อน"]
-
-    # สรุปผลรวม
     summary = df_filtered.groupby(["ชื่อ-สกุล", "แผนก"])[leave_types].sum().reset_index()
 
     st.title("📊 แดชบอร์ดการลา / ขาด / สาย")
-
     colors = {
         "ลาป่วย/ลากิจ": "#9B59B6",
         "ขาด": "#C70039",
@@ -149,16 +146,14 @@ if not df.empty:
             selected_name_tab = st.selectbox(
                 f"🔍 ค้นหาชื่อพนักงาน ({leave})",
                 ["-- แสดงทั้งหมด --"] + list(all_names),
-                index=list(["-- แสดงทั้งหมด --"] + list(all_names)).index(default_name)
-                if default_name in list(all_names) else 0,
+                index=(list(["-- แสดงทั้งหมด --"] + list(all_names)).index(default_name)
+                       if default_name in list(all_names) else 0),
                 key=f"search_{leave}"
             )
 
-            # ถ้าเปลี่ยนชื่อใหม่ ให้อัพเดท session
             if selected_name_tab != st.session_state.selected_employee:
                 st.session_state.selected_employee = selected_name_tab
 
-            # Filter ข้อมูลตามชื่อ
             if st.session_state.selected_employee != "-- แสดงทั้งหมด --":
                 summary_filtered = summary[summary["ชื่อ-สกุล"] == st.session_state.selected_employee].reset_index(drop=True)
                 person_data_full = df_filtered[df_filtered["ชื่อ-สกุล"] == st.session_state.selected_employee].reset_index(drop=True)
