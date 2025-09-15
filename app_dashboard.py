@@ -3,7 +3,6 @@ import pandas as pd
 import altair as alt
 import datetime
 import os
-import time
 
 st.set_page_config(page_title="HR Dashboard", layout="wide")
 
@@ -50,17 +49,12 @@ if st.button("🔄 Refresh ข้อมูล (Manual)"):
 # นาฬิกาแบบเรียลไทม์
 # -----------------------------
 clock_placeholder = st.empty()
-
-def update_clock():
-    now = datetime.datetime.now()
-    clock_placeholder.markdown(
-        f"<div style='text-align:right; font-size:40px; color:#FF5733; font-weight:bold;'>"
-        f"🗓 {thai_date(now)}  |  ⏰ {now.strftime('%H:%M:%S')}</div>",
-        unsafe_allow_html=True
-    )
-
-if "run_clock" not in st.session_state:
-    st.session_state.run_clock = True
+now = datetime.datetime.now()
+clock_placeholder.markdown(
+    f"<div style='text-align:right; font-size:40px; color:#FF5733; font-weight:bold;'>"
+    f"🗓 {thai_date(now)}  |  ⏰ {now.strftime('%H:%M:%S')}</div>",
+    unsafe_allow_html=True
+)
 
 # -----------------------------
 # แสดง dashboard ถ้ามีข้อมูล
@@ -157,31 +151,27 @@ if not df.empty:
             st.markdown("### 📌 สรุปข้อมูลส่วนบุคคล")
             st.dataframe(summary_filtered, use_container_width=True)
 
-            st.markdown("### 📅 วันที่ของการลา/ขาด/สาย/พักผ่อน")
+            # -----------------------------
+            # วันที่ของการลา/ขาด/สาย/พักผ่อน พร้อมข้อความต่อท้าย
+            # -----------------------------
             if not person_data_full.empty:
                 if leave == "ลาป่วย/ลากิจ":
-                    dates = person_data_full.loc[
-                        person_data_full["ข้อยกเว้น"].isin(
-                            ["ลาป่วย", "ลากิจ", "ลาป่วยครึ่งวัน", "ลากิจครึ่งวัน"]
-                        ), ["วันที่", "ข้อยกเว้น"]
-                    ]
+                    relevant_exceptions = ["ลาป่วย", "ลากิจ", "ลาป่วยครึ่งวัน", "ลากิจครึ่งวัน"]
                 elif leave == "ขาด":
-                    dates = person_data_full.loc[
-                        person_data_full["ข้อยกเว้น"].isin(["ขาด", "ขาดครึ่งวัน"]), ["วันที่", "ข้อยกเว้น"]
-                    ]
+                    relevant_exceptions = ["ขาด", "ขาดครึ่งวัน"]
                 else:
-                    dates = person_data_full.loc[
-                        person_data_full["ข้อยกเว้น"] == leave, ["วันที่", "ข้อยกเว้น"]
-                    ]
+                    relevant_exceptions = [leave]
+
+                dates = person_data_full.loc[
+                    person_data_full["ข้อยกเว้น"].isin(relevant_exceptions), ["วันที่", "ข้อยกเว้น"]
+                ]
 
                 if not dates.empty:
                     total_days = dates["ข้อยกเว้น"].apply(leave_days).sum()
                     with st.expander(f"{leave} ({total_days} วัน)"):
                         date_list = []
                         for _, row in dates.iterrows():
-                            label = row["วันที่"].strftime("%d/%m/%Y")
-                            if "ครึ่งวัน" in str(row["ข้อยกเว้น"]):
-                                label += f" ({row['ข้อยกเว้น']})"
+                            label = row["วันที่"].strftime("%d/%m/%Y") + f" ({row['ข้อยกเว้น']})"
                             date_list.append(label)
                         st.write(date_list)
 
@@ -207,11 +197,3 @@ if not df.empty:
                 st.altair_chart(chart, use_container_width=True)
             else:
                 st.info("ไม่มีข้อมูลให้แสดง")
-
-# -----------------------------
-# อัปเดตนาฬิกาแบบเรียลไทม์
-# -----------------------------
-if st.session_state.run_clock:
-    while True:
-        update_clock()
-        time.sleep(1)
