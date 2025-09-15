@@ -2,7 +2,6 @@ import streamlit as st
 import pandas as pd
 import altair as alt
 import datetime
-import io
 import os
 
 st.set_page_config(page_title="HR Dashboard", layout="wide")
@@ -24,32 +23,27 @@ def format_thai_month(period):
     return f"{month} {year}"
 
 # -----------------------------
-# โหลดไฟล์ Excel (จาก repo หรือ uploader)
+# โหลดไฟล์ Excel จาก repo เท่านั้น
 # -----------------------------
-def load_data(file_path=None, uploaded_file=None):
+def load_data(file_path):
     try:
-        if uploaded_file:
-            df = pd.read_excel(uploaded_file, engine='openpyxl')
-        elif file_path and os.path.exists(file_path):
+        if file_path and os.path.exists(file_path):
             df = pd.read_excel(file_path, engine='openpyxl')
+            return df
         else:
+            st.warning("❌ ไม่พบไฟล์ Excel: attendances.xlsx")
             return pd.DataFrame()
-        return df
     except Exception as e:
         st.error(f"❌ อ่านไฟล์ Excel ไม่ได้: {e}")
         return pd.DataFrame()
+
+df = load_data("attendances.xlsx")  # โหลดไฟล์จาก repo
 
 # -----------------------------
 # ปุ่ม Refresh
 # -----------------------------
 if st.button("🔄 Refresh ข้อมูล (Manual)"):
     st.experimental_rerun()
-
-# -----------------------------
-# ตัวเลือกอัปโหลดไฟล์บน Cloud
-# -----------------------------
-uploaded_file = st.file_uploader("อัปโหลดไฟล์ Excel (ถ้าไม่มีบน repo)", type=["xlsx"])
-df = load_data(file_path="attendances.xlsx", uploaded_file=uploaded_file)
 
 # -----------------------------
 # นาฬิกา
@@ -62,9 +56,10 @@ st.markdown(
 )
 
 # -----------------------------
-# ถ้า df มีข้อมูล
+# ตรวจสอบว่ามีข้อมูล
 # -----------------------------
 if not df.empty:
+    # ทำความสะอาดข้อมูล
     for col in ["ชื่อ-สกุล", "แผนก", "ข้อยกเว้น"]:
         if col in df.columns:
             df[col] = df[col].astype(str).str.strip().str.replace(r"\s+", " ", regex=True)
@@ -74,8 +69,6 @@ if not df.empty:
 
     if "วันที่" in df.columns:
         df["วันที่"] = pd.to_datetime(df["วันที่"], errors='coerce')
-
-    if "วันที่" in df.columns:
         df["ปี"] = df["วันที่"].dt.year + 543
         df["เดือน"] = df["วันที่"].dt.to_period("M")
 
