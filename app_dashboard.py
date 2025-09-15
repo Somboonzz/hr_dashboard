@@ -3,8 +3,21 @@ import pandas as pd
 import altair as alt
 import datetime
 import os
+import pytz
 
 st.set_page_config(page_title="HR Dashboard", layout="wide")
+
+# กำหนดโซนเวลาเป็น 'Asia/Bangkok'
+bangkok_tz = pytz.timezone('Asia/Bangkok')
+
+# ฟังก์ชันเพื่อแสดงเวลาปัจจุบันในโซนเวลา Bangkok
+def show_bangkok_time():
+    utc_now = datetime.datetime.now(pytz.utc)  # เวลาปัจจุบันใน UTC
+    bangkok_now = utc_now.astimezone(bangkok_tz)  # แปลงเวลาเป็น Bangkok Time
+    st.write(f"🗓 {bangkok_now.strftime('%d/%m/%Y')}  |  ⏰ {bangkok_now.strftime('%H:%M:%S')}")
+
+# เรียกใช้ฟังก์ชันเพื่อแสดงเวลา
+show_bangkok_time()
 
 # -----------------------------
 # ฟังก์ชันวันที่แบบไทย
