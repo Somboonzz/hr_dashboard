@@ -3,6 +3,7 @@ import pandas as pd
 import altair as alt
 import datetime
 import os
+import time
 
 st.set_page_config(page_title="HR Dashboard", layout="wide")
 
@@ -23,9 +24,9 @@ def format_thai_month(period):
     return f"{month} {year}"
 
 # -----------------------------
-# โหลดไฟล์ Excel จาก repo เท่านั้น
+# โหลดไฟล์ Excel
 # -----------------------------
-def load_data(file_path):
+def load_data(file_path="attendances.xlsx"):
     try:
         if file_path and os.path.exists(file_path):
             df = pd.read_excel(file_path, engine='openpyxl')
@@ -37,7 +38,7 @@ def load_data(file_path):
         st.error(f"❌ อ่านไฟล์ Excel ไม่ได้: {e}")
         return pd.DataFrame()
 
-df = load_data("attendances.xlsx")  # โหลดไฟล์จาก repo
+df = load_data()
 
 # -----------------------------
 # ปุ่ม Refresh
@@ -46,20 +47,25 @@ if st.button("🔄 Refresh ข้อมูล (Manual)"):
     st.experimental_rerun()
 
 # -----------------------------
-# นาฬิกา
+# นาฬิกาแบบเรียลไทม์
 # -----------------------------
-now = datetime.datetime.now()
-st.markdown(
-    f"<div style='text-align:right; font-size:40px; color:#FF5733; font-weight:bold;'>"
-    f"🗓 {thai_date(now)}  |  ⏰ {now.strftime('%H:%M:%S')}</div>",
-    unsafe_allow_html=True
-)
+clock_placeholder = st.empty()
+
+def update_clock():
+    now = datetime.datetime.now()
+    clock_placeholder.markdown(
+        f"<div style='text-align:right; font-size:40px; color:#FF5733; font-weight:bold;'>"
+        f"🗓 {thai_date(now)}  |  ⏰ {now.strftime('%H:%M:%S')}</div>",
+        unsafe_allow_html=True
+    )
+
+if "run_clock" not in st.session_state:
+    st.session_state.run_clock = True
 
 # -----------------------------
-# ตรวจสอบว่ามีข้อมูล
+# แสดง dashboard ถ้ามีข้อมูล
 # -----------------------------
 if not df.empty:
-    # ทำความสะอาดข้อมูล
     for col in ["ชื่อ-สกุล", "แผนก", "ข้อยกเว้น"]:
         if col in df.columns:
             df[col] = df[col].astype(str).str.strip().str.replace(r"\s+", " ", regex=True)
@@ -115,16 +121,10 @@ if not df.empty:
     summary = df_filtered.groupby(["ชื่อ-สกุล", "แผนก"])[leave_types].sum().reset_index()
 
     st.title("📊 แดชบอร์ดการลา / ขาด / สาย")
-    colors = {
-        "ลาป่วย/ลากิจ": "#C70039",
-        "ขาด": "#C70039",
-        "สาย": "#C70039",
-        "พักผ่อน": "#C70039",
-    }
 
-    # -----------------------------
+    colors = {lt: "#C70039" for lt in leave_types}
+
     # เก็บชื่อพนักงานใน session
-    # -----------------------------
     if "selected_employee" not in st.session_state:
         st.session_state.selected_employee = None
 
@@ -207,3 +207,11 @@ if not df.empty:
                 st.altair_chart(chart, use_container_width=True)
             else:
                 st.info("ไม่มีข้อมูลให้แสดง")
+
+# -----------------------------
+# อัปเดตนาฬิกาแบบเรียลไทม์
+# -----------------------------
+if st.session_state.run_clock:
+    while True:
+        update_clock()
+        time.sleep(1)
