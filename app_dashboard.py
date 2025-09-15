@@ -4,24 +4,16 @@ import altair as alt
 import datetime
 import os
 import pytz
+import time
 
 st.set_page_config(page_title="HR Dashboard", layout="wide")
 
-# กำหนดโซนเวลาเป็น 'Asia/Bangkok'
-bangkok_tz = pytz.timezone('Asia/Bangkok')
-
-# ฟังก์ชันเพื่อแสดงเวลาปัจจุบันในโซนเวลา Bangkok
-def show_bangkok_time():
-    utc_now = datetime.datetime.now(pytz.utc)  # เวลาปัจจุบันใน UTC
-    bangkok_now = utc_now.astimezone(bangkok_tz)  # แปลงเวลาเป็น Bangkok Time
-    st.write(f"🗓 {bangkok_now.strftime('%d/%m/%Y')}  |  ⏰ {bangkok_now.strftime('%H:%M:%S')}")
-
-# เรียกใช้ฟังก์ชันเพื่อแสดงเวลา
-show_bangkok_time()
-
 # -----------------------------
+# โซนเวลาไทย
+# -----------------------------
+bangkok_tz = pytz.timezone("Asia/Bangkok")
+
 # ฟังก์ชันวันที่แบบไทย
-# -----------------------------
 def thai_date(dt):
     return dt.strftime(f"%d/%m/{dt.year + 543}")
 
@@ -59,15 +51,30 @@ if st.button("🔄 Refresh ข้อมูล (Manual)"):
     st.experimental_rerun()
 
 # -----------------------------
-# นาฬิกาแบบเรียลไทม์
+# นาฬิกาเรียลไทม์
 # -----------------------------
 clock_placeholder = st.empty()
-now = datetime.datetime.now()
-clock_placeholder.markdown(
-    f"<div style='text-align:right; font-size:40px; color:#FF5733; font-weight:bold;'>"
-    f"🗓 {thai_date(now)}  |  ⏰ {now.strftime('%H:%M:%S')}</div>",
-    unsafe_allow_html=True
-)
+
+def update_clock():
+    bangkok_now = datetime.datetime.now(pytz.utc).astimezone(bangkok_tz)
+    clock_placeholder.markdown(
+        f"<div style='text-align:right; font-size:50px; color:#FF5733; font-weight:bold;'>"
+        f"🗓 {thai_date(bangkok_now)}  |  ⏰ {bangkok_now.strftime('%H:%M:%S')}</div>",
+        unsafe_allow_html=True
+    )
+
+if "run_clock" not in st.session_state:
+    st.session_state.run_clock = True
+
+# -----------------------------
+# เริ่มนาฬิกา
+# -----------------------------
+if st.session_state.run_clock:
+    st_autorefresh = st.empty()  # placeholder ให้รีเฟรชทุกวินาที
+    def refresh_clock():
+        update_clock()
+        time.sleep(1)
+        st_autorefresh.empty()  # ทำให้ placeholder ว่างเพื่อเรียก update อีกครั้ง
 
 # -----------------------------
 # แสดง dashboard ถ้ามีข้อมูล
@@ -210,3 +217,11 @@ if not df.empty:
                 st.altair_chart(chart, use_container_width=True)
             else:
                 st.info("ไม่มีข้อมูลให้แสดง")
+
+# -----------------------------
+# เรียลไทม์แบบ loop
+# -----------------------------
+if st.session_state.run_clock:
+    while True:
+        update_clock()
+        time.sleep(1)
