@@ -156,13 +156,13 @@ def display_dashboard():
     
     # --- Sidebar ---
     with st.sidebar:
-        st.header(f"👋 ยินดีต้อนรับ")
-        st.write(f"**{st.session_state.user}**")
-        st.divider()
+        st.header("เมนู")
         st.button("🚪 ออกจากระบบ", on_click=logout, use_container_width=True)
 
     # --- Main Content ---
     st.title(f"📊 แดชบอร์ดสรุปข้อมูล")
+    st.caption(f"ข้อมูลของคุณ: **{st.session_state.user}**")
+    st.divider()
 
     df_full = load_data()
     df_user, summary = process_user_data(df_full, st.session_state.user)
