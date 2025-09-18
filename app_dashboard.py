@@ -4,184 +4,232 @@ import altair as alt
 import datetime
 import os
 import pytz
-import time
 import random
 
-st.set_page_config(page_title="HR Dashboard", layout="wide")
+# -----------------------------
+# การตั้งค่าหน้าเว็บและสไตล์
+# -----------------------------
+st.set_page_config(
+    page_title="HR Dashboard",
+    page_icon="📊",
+    layout="wide"
+)
+
+# ซ่อน UI เริ่มต้นของ Streamlit เพื่อให้ดูเป็นแอปฯ มากขึ้น
+hide_streamlit_style = """
+            <style>
+            #MainMenu {visibility: hidden;}
+            footer {visibility: hidden;}
+            header {visibility: hidden;}
+            </style>
+            """
+st.markdown(hide_streamlit_style, unsafe_allow_html=True)
 
 # -----------------------------
-# โซนเวลาไทย
+# โซนเวลาและฟังก์ชันเกี่ยวกับวันที่
 # -----------------------------
 bangkok_tz = pytz.timezone("Asia/Bangkok")
 
 def thai_date(dt):
+    """แปลง datetime object เป็นสตริงวันที่ไทย (พ.ศ.)"""
     return dt.strftime(f"%d/%m/{dt.year + 543}")
 
-thai_months = [
-    "มกราคม", "กุมภาพันธ์", "มีนาคม", "เมษายน", "พฤษภาคม", "มิถุนายน",
-    "กรกฎาคม", "สิงหาคม", "กันยายน", "ตุลาคม", "พฤศจิกายน", "ธันวาคม"
-]
-
-def format_thai_month(period):
-    year = period.year + 543
-    month = thai_months[period.month - 1]
-    return f"{month} {year}"
-
 # -----------------------------
-# โหลด Excel
+# การจัดการข้อมูล
 # -----------------------------
+@st.cache_data # Cache ข้อมูลเพื่อประสิทธิภาพที่ดีขึ้น
 def load_data(file_path="attendances.xlsx"):
-    try:
-        if file_path and os.path.exists(file_path):
-            df = pd.read_excel(file_path, engine='openpyxl')
-            return df
-        else:
-            st.warning("❌ ไม่พบไฟล์ Excel: attendances.xlsx")
-            return pd.DataFrame()
-    except Exception as e:
-        st.error(f"❌ อ่านไฟล์ Excel ไม่ได้: {e}")
+    """โหลดข้อมูลจากไฟล์ Excel และคืนค่าเป็น DataFrame"""
+    if file_path and os.path.exists(file_path):
+        return pd.read_excel(file_path, engine='openpyxl')
+    else:
+        st.warning("❌ ไม่พบไฟล์ Excel: attendances.xlsx")
         return pd.DataFrame()
 
-df = load_data()
-
-# -----------------------------
-# Session State สำหรับ OTP + Login
-# -----------------------------
-if "step" not in st.session_state:
-    st.session_state.step = "login"
-if "phone" not in st.session_state:
-    st.session_state.phone = None
-if "otp" not in st.session_state:
-    st.session_state.otp = None
-if "user" not in st.session_state:
-    st.session_state.user = None
-
-# -----------------------------
-# กำหนดผู้ใช้ (เบอร์ -> ชื่อ)
-# -----------------------------
-users = {
-    "0989620358": "นายสมบูรณ์ เหนือกอง",
-   
-}
-
-# -----------------------------
-# หน้า Login
-# -----------------------------
-if st.session_state.step == "login":
-    st.title("เข้าสู่ระบบ")
-    phone_input = st.text_input("กรอกเบอร์โทรศัพท์")
-    if st.button("ขอรหัส OTP"):
-        if phone_input in users:
-            st.session_state.phone = phone_input
-            st.session_state.otp = str(random.randint(1000, 9999))
-            st.session_state.step = "verify"
-            st.success(f"รหัส OTP ของคุณคือ: {st.session_state.otp} (ทดสอบในแอพ)")
-        else:
-            st.error("ไม่พบผู้ใช้ในระบบ")
-    st.stop()
-
-# -----------------------------
-# หน้า OTP
-# -----------------------------
-if st.session_state.step == "verify":
-    st.title("ยืนยัน OTP")
-    otp_input = st.text_input("กรอกรหัส OTP")
-    if st.button("ยืนยัน"):
-        if otp_input == st.session_state.otp:
-            st.session_state.user = users[st.session_state.phone]
-            st.session_state.step = "dashboard"
-        else:
-            st.error("รหัส OTP ไม่ถูกต้อง")
-    st.stop()
-
-# -----------------------------
-# Dashboard (เฉพาะผู้ใช้)
-# -----------------------------
-if st.session_state.step == "dashboard":
-    st.title(f"📊 แดชบอร์ดของ {st.session_state.user}")
-
-    # Filter ข้อมูลเฉพาะผู้ใช้
-    df_user = df[df["ชื่อ-สกุล"] == st.session_state.user].copy()
-
+def process_user_data(df, user_name):
+    """ประมวลผลข้อมูลสำหรับผู้ใช้ที่ระบุ"""
+    df_user = df[df["ชื่อ-สกุล"] == user_name].copy()
     if df_user.empty:
-        st.info("ไม่มีข้อมูลให้แสดง")
-        st.stop()
+        return pd.DataFrame(), pd.DataFrame()
 
-    # แก้ไขคอลัมน์
+    # --- ทำความสะอาดข้อมูล ---
     for col in ["ชื่อ-สกุล", "แผนก", "ข้อยกเว้น"]:
         if col in df_user.columns:
             df_user[col] = df_user[col].astype(str).str.strip().str.replace(r"\s+", " ", regex=True)
-
     if "แผนก" in df_user.columns:
         df_user["แผนก"] = df_user["แผนก"].replace({"nan": "ไม่ระบุ", "": "ไม่ระบุ"})
-
     if "วันที่" in df_user.columns:
         df_user["วันที่"] = pd.to_datetime(df_user["วันที่"], errors='coerce')
-        df_user["ปี"] = df_user["วันที่"].dt.year + 543
-        df_user["เดือน"] = df_user["วันที่"].dt.to_period("M")
 
-    # คำนวณประเภทการลา
-    def leave_days(row):
-        if "ครึ่งวัน" in str(row):
-            return 0.5
-        return 1
+    # --- คำนวณประเภทการลา ---
+    def leave_days(exception_text):
+        return 0.5 if "ครึ่งวัน" in str(exception_text) else 1
 
     df_user["ลาป่วย/ลากิจ"] = df_user["ข้อยกเว้น"].apply(
-        lambda x: leave_days(x) if str(x) in ["ลาป่วย", "ลากิจ", "ลาป่วยครึ่งวัน", "ลากิจครึ่งวัน"] else 0
-    )
+        lambda x: leave_days(x) if str(x) in ["ลาป่วย", "ลากิจ", "ลาป่วยครึ่งวัน", "ลากิจครึ่งวัน"] else 0)
     df_user["ขาด"] = df_user["ข้อยกเว้น"].apply(
-        lambda x: leave_days(x) if str(x) in ["ขาด", "ขาดครึ่งวัน"] else 0
-    )
+        lambda x: leave_days(x) if str(x) in ["ขาด", "ขาดครึ่งวัน"] else 0)
     df_user["สาย"] = df_user["ข้อยกเว้น"].apply(lambda x: 1 if str(x) == "สาย" else 0)
     df_user["พักผ่อน"] = df_user["ข้อยกเว้น"].apply(lambda x: 1 if str(x) == "พักผ่อน" else 0)
 
     leave_types = ["ลาป่วย/ลากิจ", "ขาด", "สาย", "พักผ่อน"]
-    summary = df_user.groupby(["ชื่อ-สกุล", "แผนก"])[leave_types].sum().reset_index()
+    summary_df = df_user.groupby("ชื่อ-สกุล")[leave_types].sum().reset_index()
 
-    st.markdown("### 📌 สรุปข้อมูลส่วนบุคคล")
-    st.dataframe(summary.drop(columns=["ชื่อ-สกุล", "แผนก"], errors='ignore'), use_container_width=True)
+    return df_user, summary_df
 
-    # -----------------------------
-    # แสดงวันที่ของการลา/ขาด/สาย/พักผ่อน
-    # -----------------------------
-    for leave in leave_types:
-        st.subheader(f"{leave}")
-        if leave == "ลาป่วย/ลากิจ":
-            relevant_exceptions = ["ลาป่วย", "ลากิจ", "ลาป่วยครึ่งวัน", "ลากิจครึ่งวัน"]
-        elif leave == "ขาด":
-            relevant_exceptions = ["ขาด", "ขาดครึ่งวัน"]
-        else:
-            relevant_exceptions = [leave]
+# -----------------------------
+# การจัดการ Session State และ Authentication
+# -----------------------------
+if "step" not in st.session_state:
+    st.session_state.step = "login"
+    st.session_state.phone = ""
+    st.session_state.otp_input = ""
+    st.session_state.otp_sent = False
+    st.session_state.user = ""
+    st.session_state.generated_otp = ""
 
-        dates = df_user.loc[df_user["ข้อยกเว้น"].isin(relevant_exceptions), ["วันที่", "ข้อยกเว้น"]]
-        if not dates.empty:
-            total_days = dates["ข้อยกเว้น"].apply(leave_days).sum()
-            with st.expander(f"{leave} ({total_days} วัน)"):
-                date_list = []
-                for _, row in dates.iterrows():
-                    label = row["วันที่"].strftime("%d/%m/%Y") + f" ({row['ข้อยกเว้น']})"
-                    date_list.append(label)
-                st.write(date_list)
+# ผู้ใช้ตัวอย่าง (ในระบบจริงควรดึงจากฐานข้อมูล)
+USERS_DB = {
+    "0989620358": "นายสมบูรณ์ เหนือกอง",
+}
 
-        # กราฟ
-        chart = (
-            alt.Chart(summary)
-            .mark_bar(cornerRadiusTopLeft=5, cornerRadiusBottomLeft=5, color="#C70039")
-            .encode(
-                y=alt.Y("ชื่อ-สกุล:N", sort="-x", title="ชื่อ-สกุล"),
-                x=alt.X(leave + ":Q", title=leave),
-                tooltip=["ชื่อ-สกุล", leave],
+def logout():
+    """เคลียร์ Session State และกลับไปหน้า Login"""
+    st.session_state.step = "login"
+    st.session_state.phone = ""
+    st.session_state.otp_input = ""
+    st.session_state.otp_sent = False
+    st.session_state.user = ""
+    st.session_state.generated_otp = ""
+    st.rerun()
+
+# -----------------------------
+# ส่วนแสดงผล (UI)
+# -----------------------------
+
+def display_login_page():
+    """แสดงฟอร์มสำหรับล็อกอิน"""
+    st.title("📊 HR Dashboard")
+    st.markdown("กรุณาเข้าสู่ระบบเพื่อดูข้อมูลการเข้า-ออกงานของคุณ")
+
+    col1, col2, col3 = st.columns([1, 1.5, 1]) # จัดคอลัมน์ให้อยู่ตรงกลาง
+
+    with col2:
+        with st.container(border=True):
+            st.markdown("#### <div style='text-align: center;'>เข้าสู่ระบบด้วย OTP</div>", unsafe_allow_html=True)
+            
+            phone_input = st.text_input(
+                "เบอร์โทรศัพท์",
+                key="phone",
+                placeholder="กรอกเบอร์โทรศัพท์ 10 หลัก",
+                max_chars=10
             )
-            .properties(width=800, height=200)
-        )
-        st.altair_chart(chart, use_container_width=True)
 
-    # -----------------------------
-    # ปุ่มออกจากระบบ
-    # -----------------------------
-    if st.button("ออกจากระบบ"):
-        st.session_state.step = "login"
-        st.session_state.user = None
-        st.session_state.otp = None
-        st.session_state.phone = None
-        st.experimental_rerun()
+            if st.button("📲 ขอรหัส OTP", use_container_width=True, type="primary"):
+                if phone_input in USERS_DB:
+                    st.session_state.otp_sent = True
+                    st.session_state.generated_otp = str(random.randint(1000, 9999))
+                    # ในระบบจริง จะส่ง OTP ผ่าน SMS ที่นี่
+                    st.success(f"OTP ถูกส่งไปที่เบอร์ {phone_input} แล้ว")
+                    st.info(f"สำหรับทดสอบ: รหัส OTP ของคุณคือ **{st.session_state.generated_otp}**")
+                else:
+                    st.error("ไม่พบเบอร์โทรศัพท์นี้ในระบบ")
+
+            if st.session_state.otp_sent:
+                otp_input = st.text_input(
+                    "รหัส OTP",
+                    key="otp_input",
+                    placeholder="กรอกรหัส 4 หลักที่ได้รับ",
+                    max_chars=4
+                )
+                if st.button("✅ ยืนยัน OTP", use_container_width=True):
+                    if otp_input == st.session_state.generated_otp:
+                        st.session_state.user = USERS_DB[st.session_state.phone]
+                        st.session_state.step = "dashboard"
+                        st.rerun() # สั่งให้แอปฯ โหลดใหม่เพื่อไปหน้า dashboard
+                    else:
+                        st.error("รหัส OTP ไม่ถูกต้อง")
+
+def display_dashboard():
+    """แสดง Dashboard ของผู้ใช้"""
+    
+    # --- Sidebar ---
+    with st.sidebar:
+        st.header(f"👋 ยินดีต้อนรับ")
+        st.write(f"**{st.session_state.user}**")
+        st.divider()
+        st.button("🚪 ออกจากระบบ", on_click=logout, use_container_width=True)
+
+    # --- Main Content ---
+    st.title(f"📊 แดชบอร์ดสรุปข้อมูล")
+
+    df_full = load_data()
+    df_user, summary = process_user_data(df_full, st.session_state.user)
+
+    if summary.empty:
+        st.info("ไม่พบข้อมูลการเข้า-ออกงานของคุณ")
+        return
+
+    # --- แสดงการ์ดข้อมูลสรุป (Metrics) ---
+    st.markdown("### 🗓️ สรุปภาพรวม")
+    col1, col2, col3, col4 = st.columns(4)
+    col1.metric("ลาป่วย/ลากิจ (วัน)", summary["ลาป่วย/ลากิจ"].sum())
+    col2.metric("ขาดงาน (วัน)", summary["ขาด"].sum())
+    col3.metric("มาสาย (ครั้ง)", int(summary["สาย"].sum()))
+    col4.metric("วันพักผ่อน (วัน)", int(summary["พักผ่อน"].sum()))
+    st.divider()
+
+    # --- แสดงรายละเอียดและกราฟ ---
+    st.markdown("### 📈 รายละเอียดและสถิติ")
+
+    # เตรียมข้อมูลสำหรับกราฟรวม
+    summary_melted = summary.melt(
+        id_vars=["ชื่อ-สกุล"],
+        value_vars=["ลาป่วย/ลากิจ", "ขาด", "สาย", "พักผ่อน"],
+        var_name="ประเภท",
+        value_name="จำนวนวัน/ครั้ง"
+    )
+
+    # สร้างกราฟแท่งรวม
+    chart = alt.Chart(summary_melted).mark_bar().encode(
+        x=alt.X('จำนวนวัน/ครั้ง:Q', title='จำนวน (วัน/ครั้ง)'),
+        y=alt.Y('ประเภท:N', title='ประเภท', sort='-x'),
+        color=alt.Color('ประเภท:N', 
+                        scale=alt.Scale(
+                            domain=['ลาป่วย/ลากิจ', 'ขาด', 'สาย', 'พักผ่อน'],
+                            range=['#FFC300', '#C70039', '#FF5733', '#33C1FF']
+                        ),
+                        legend=None),
+        tooltip=['ประเภท', 'จำนวนวัน/ครั้ง']
+    ).properties(
+        title='กราฟเปรียบเทียบข้อมูล'
+    )
+    st.altair_chart(chart, use_container_width=True)
+
+
+    # --- แสดงรายการวันที่แบบ Expander ---
+    st.markdown("#### 📜 รายการวันที่")
+    leave_types_map = {
+        "ลาป่วย/ลากิจ": ["ลาป่วย", "ลากิจ", "ลาป่วยครึ่งวัน", "ลากิจครึ่งวัน"],
+        "ขาด": ["ขาด", "ขาดครึ่งวัน"],
+        "สาย": ["สาย"],
+        "พักผ่อน": ["พักผ่อน"]
+    }
+    
+    for leave_type, exceptions in leave_types_map.items():
+        dates_df = df_user[df_user["ข้อยกเว้น"].isin(exceptions)]
+        total_days = df_user[leave_type].sum()
+
+        if not dates_df.empty:
+            with st.expander(f"ดูวันที่ **{leave_type}** (รวม {total_days} วัน/ครั้ง)"):
+                for _, row in dates_df.iterrows():
+                    st.markdown(f"- **{thai_date(row['วันที่'])}**: {row['ข้อยกเว้น']}")
+
+
+# -----------------------------
+# Main App Logic
+# -----------------------------
+if st.session_state.step == "login":
+    display_login_page()
+else:
+    display_dashboard()
