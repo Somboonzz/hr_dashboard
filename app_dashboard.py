@@ -294,7 +294,11 @@ def display_dashboard():
         if not df_full_cleaned.empty:
             start_date = df_full_cleaned['วันที่'].min()
             end_date = df_full_cleaned['วันที่'].max()
-            st.caption(f"ข้อมูลระหว่างวันที่: **{thai_date(start_date)}** ถึง **{thai_date(end_date)}**")
+            # ใช้ st.markdown และ CSS เพื่อควบคุมขนาดตัวอักษร
+            st.markdown(
+                f'<p style="font-size: 0.8rem; margin: 0;">ข้อมูลระหว่างวันที่: <b>{thai_date(start_date)}</b> ถึง <b>{thai_date(end_date)}</b></p>',
+                unsafe_allow_html=True
+            )
     st.divider()
 
     df_user, summary = process_user_data(df_full, st.session_state.user)
@@ -345,7 +349,11 @@ def display_dashboard():
         if not dates_df.empty:
             with st.expander(f"ดูวันที่ **{leave_type}** (รวม {total_days} วัน/ครั้ง)"):
                 for _, row in dates_df.sort_values(by="วันที่").iterrows():
-                    st.markdown(f"- **{thai_date(row['วันที่'])}**: {row['ข้อยกเว้น']}")
+                    # ใช้ st.markdown และ CSS เพื่อควบคุมขนาดตัวอักษร
+                    st.markdown(
+                        f'<p style="font-size: 0.9rem; margin: 0;">- <b>{thai_date(row["วันที่"])}</b>: {row["ข้อยกเว้น"]}</p>',
+                        unsafe_allow_html=True
+                    )
     
     st.divider()
     # ปุ่มออกจากระบบที่ด้านล่างของหน้าหลัก (สำหรับหน้าจอขนาดใหญ่)
