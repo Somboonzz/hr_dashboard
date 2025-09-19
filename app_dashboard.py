@@ -164,7 +164,7 @@ def display_login_page():
             st.session_state.forgot_step = "input_phones"
             st.rerun()
             
-        
+            
 def display_password_page(mode="set"):
     """แสดงหน้าสำหรับตั้งค่าหรือเปลี่ยนรหัสผ่าน"""
     title_map = {
@@ -246,6 +246,7 @@ def display_forgot_password_page():
 
 def display_dashboard():
     """แสดง Dashboard ของผู้ใช้"""
+    # เนื้อหาใน st.sidebar จะถูกย้ายไปในเมนู 3 ขีดโดยอัตโนมัติบนมือถือ
     with st.sidebar:
         st.header("เมนู")
         st.info(f"ยินดีต้อนรับ,\n**{st.session_state.user}**")
@@ -254,7 +255,12 @@ def display_dashboard():
         if st.button("🔑 เปลี่ยนรหัสผ่าน"):
             st.session_state.step = "change_password"
             st.rerun()
+        
+        # ปุ่มออกจากระบบ
+        st.divider()
+        st.button("🚪 ออกจากระบบ", on_click=logout, use_container_width=True)
 
+    # เนื้อหาหลักของแดชบอร์ด
     st.title(f"📊 แดชบอร์ดสรุปข้อมูลของ **{st.session_state.user}**")
 
     df_full = load_data()
@@ -271,10 +277,6 @@ def display_dashboard():
 
     if summary.empty:
         st.info("ไม่พบข้อมูลการเข้า-ออกงานของคุณ")
-        st.divider()
-        _ , btn_col, _ = st.columns([1, 0.5, 1])
-        with btn_col:
-            st.button("🚪 ออกจากระบบ", on_click=logout, use_container_width=True)
         return
 
     st.markdown("### 🗓️ สรุปภาพรวม")
@@ -322,6 +324,7 @@ def display_dashboard():
                     st.markdown(f"- **{thai_date(row['วันที่'])}**: {row['ข้อยกเว้น']}")
     
     st.divider()
+    # ปุ่มออกจากระบบที่ด้านล่างของหน้าหลัก (สำหรับหน้าจอขนาดใหญ่)
     _ , btn_col, _ = st.columns([1, 0.5, 1])
     with btn_col:
         st.button("🚪 ออกจากระบบ", on_click=logout, use_container_width=True)
