@@ -45,7 +45,6 @@ def load_data(file_path="attendances.xlsx"):
     if file_path and os.path.exists(file_path):
         try:
             df = pd.read_excel(file_path, engine='openpyxl')
-            # ตรวจสอบและแปลงคอลัมน์ 'วันที่' ให้เป็น datetime ทันที
             if 'วันที่' in df.columns:
                 df['วันที่'] = pd.to_datetime(df['วันที่'], errors='coerce')
             return df
@@ -65,15 +64,12 @@ def process_user_data(df, user_name):
     if df_user.empty:
         return pd.DataFrame(), pd.DataFrame()
 
-    # --- ทำความสะอาดข้อมูล ---
     for col in ["ชื่อ-สกุล", "แผนก", "ข้อยกเว้น"]:
         if col in df_user.columns:
             df_user[col] = df_user[col].astype(str).str.strip().str.replace(r"\s+", " ", regex=True)
     if "แผนก" in df_user.columns:
         df_user["แผนก"] = df_user["แผนก"].replace({"nan": "ไม่ระบุ", "": "ไม่ระบุ"})
-    # คอลัมน์วันที่ถูกแปลงแล้วในฟังก์ชัน load_data
-
-    # --- คำนวณประเภทการลา ---
+    
     def leave_days(exception_text):
         return 0.5 if "ครึ่งวัน" in str(exception_text) else 1
 
@@ -86,7 +82,6 @@ def process_user_data(df, user_name):
 
     leave_types = ["ลาป่วย/ลากิจ", "ขาด", "สาย", "พักผ่อน"]
     summary_df = df_user.groupby("ชื่อ-สกุล")[leave_types].sum().reset_index()
-
     return df_user, summary_df
 
 # -----------------------------
@@ -95,27 +90,28 @@ def process_user_data(df, user_name):
 if "step" not in st.session_state:
     st.session_state.step = "login"
     st.session_state.phone = ""
-    st.session_state.otp_input = ""
-    st.session_state.otp_sent = False
     st.session_state.user = ""
-    st.session_state.generated_otp = ""
+    st.session_state.forgot_step = "input_phones"
+    st.session_state.temp_otp = ""
+    st.session_state.reset_phone = ""
 
-# ผู้ใช้ตัวอย่าง (ในระบบจริงควรดึงจากฐานข้อมูล)
-USERS_DB = {
-    "0989620358": "นายสมบูรณ์ เหนือกอง",
-    "0951646928": "นางสาวพรทิพย์ สุขอนันต์",
-    "0618741894": "นายอมร เพ็งโสภา",
-    "0918802121": "นางนิภาพร ไพโรจน์ฤทธิ์กุล",
-}
+# ผู้ใช้ตัวอย่าง (ในระบบจริงควรดึงจากฐานข้อมูลและมีการเข้ารหัสรหัสผ่าน)
+# password: None หมายถึงยังไม่ได้ตั้งรหัสผ่าน
+if "USERS_DB" not in st.session_state:
+    st.session_state.USERS_DB = {
+        "0989620358": {"name": "นายสมบูรณ์ เหนือกอง", "password": None},
+        "0951646928": {"name": "นางสาวพรทิพย์ สุขอนันต์", "password": None},
+        "0618741894": {"name": "นายอมร เพ็งโสภา", "password": None},
+        "0888888888": {"name": "ผู้ดูแลระบบ", "password": "admin"},
+    }
 
 def logout():
     """เคลียร์ Session State และกลับไปหน้า Login"""
+    keys_to_reset = ["step", "phone", "user", "forgot_step", "temp_otp", "reset_phone"]
+    for key in keys_to_reset:
+        if key in st.session_state:
+            st.session_state[key] = ""
     st.session_state.step = "login"
-    st.session_state.phone = ""
-    st.session_state.otp_input = ""
-    st.session_state.otp_sent = False
-    st.session_state.user = ""
-    st.session_state.generated_otp = ""
     st.rerun()
 
 # -----------------------------
@@ -123,87 +119,169 @@ def logout():
 # -----------------------------
 
 def display_login_page():
-    """แสดงฟอร์มสำหรับล็อกอิน"""
+    """แสดงฟอร์มสำหรับล็อกอินด้วยรหัสผ่าน"""
     st.title("📊 HR Dashboard")
     st.markdown("กรุณาเข้าสู่ระบบเพื่อดูข้อมูลการเข้า-ออกงานของคุณ")
 
-    col1, col2, col3 = st.columns([1, 1.5, 1]) # จัดคอลัมน์ให้อยู่ตรงกลาง
+    col1, col2, col3 = st.columns([1, 1.5, 1])
 
     with col2:
         with st.container(border=True):
-            st.markdown("#### <div style='text-align: center;'>เข้าสู่ระบบด้วย OTP</div>", unsafe_allow_html=True)
+            st.markdown("#### <div style='text-align: center;'>เข้าสู่ระบบ</div>", unsafe_allow_html=True)
             
-            phone_input = st.text_input(
+            phone = st.text_input(
                 "เบอร์โทรศัพท์",
-                key="phone",
                 placeholder="กรอกเบอร์โทรศัพท์ 10 หลัก",
                 max_chars=10
             )
+            password = st.text_input(
+                "รหัสผ่าน",
+                type="password",
+                placeholder="กรอกรหัสผ่าน"
+            )
 
-            if st.button("📲 ขอรหัส OTP", use_container_width=True, type="primary"):
-                if phone_input in USERS_DB:
-                    st.session_state.otp_sent = True
-                    st.session_state.generated_otp = str(random.randint(1000, 9999))
-                    # ในระบบจริง จะส่ง OTP ผ่าน SMS ที่นี่
-                    st.success(f"OTP ถูกส่งไปที่เบอร์ {phone_input} แล้ว")
-                    st.info(f"สำหรับทดสอบ: รหัส OTP ของคุณคือ **{st.session_state.generated_otp}**")
+            if st.button("✅ เข้าสู่ระบบ", use_container_width=True, type="primary"):
+                if phone in st.session_state.USERS_DB:
+                    user_data = st.session_state.USERS_DB[phone]
+                    if user_data["password"] is None:
+                        st.session_state.phone = phone
+                        st.session_state.step = "set_password"
+                        st.rerun()
+                    elif user_data["password"] == password:
+                        st.session_state.user = user_data["name"]
+                        st.session_state.phone = phone
+                        st.session_state.step = "dashboard"
+                        st.rerun()
+                    else:
+                        st.error("รหัสผ่านไม่ถูกต้อง")
                 else:
                     st.error("ไม่พบเบอร์โทรศัพท์นี้ในระบบ")
 
-            if st.session_state.otp_sent:
-                otp_input = st.text_input(
-                    "รหัส OTP",
-                    key="otp_input",
-                    placeholder="กรอกรหัส 4 หลักที่ได้รับ",
-                    max_chars=4
-                )
-                if st.button("✅ ยืนยัน OTP", use_container_width=True):
-                    if otp_input == st.session_state.generated_otp:
-                        st.session_state.user = USERS_DB[st.session_state.phone]
+        st.markdown("---")
+        # เพิ่มปุ่มสำหรับฟังก์ชันลืมรหัสผ่าน
+        if st.button("🔒 ลืมรหัสผ่าน", use_container_width=True):
+            st.session_state.step = "forgot_password"
+            st.session_state.forgot_step = "input_phones"
+            st.rerun()
+            
+        with st.expander("แสดงรายชื่อผู้ใช้งานสำหรับการทดสอบ"):
+            st.write("รายชื่อและเบอร์โทรศัพท์ที่ใช้ล็อกอินได้:")
+            for phone, user_data in st.session_state.USERS_DB.items():
+                st.markdown(f"- **{user_data['name']}**: `{phone}`")
+
+
+def display_password_page(mode="set"):
+    """แสดงหน้าสำหรับตั้งค่าหรือเปลี่ยนรหัสผ่าน"""
+    title_map = {
+        "set": "ตั้งรหัสผ่านครั้งแรก",
+        "change": "เปลี่ยนรหัสผ่าน",
+    }
+    title = title_map.get(mode, "จัดการรหัสผ่าน")
+    st.title(f"🔑 {title}")
+
+    col1, col2, col3 = st.columns([1, 1.5, 1])
+    with col2:
+        with st.container(border=True):
+            st.markdown(f"#### <div style='text-align: center;'>{title}</div>", unsafe_allow_html=True)
+            st.info(f"สำหรับเบอร์โทรศัพท์: {st.session_state.phone}")
+
+            if mode == "change":
+                current_password = st.text_input("รหัสผ่านปัจจุบัน", type="password")
+            
+            new_password = st.text_input("รหัสผ่านใหม่", type="password")
+            confirm_password = st.text_input("ยืนยันรหัสผ่านใหม่", type="password")
+
+            if st.button("💾 บันทึก", use_container_width=True, type="primary"):
+                user_data = st.session_state.USERS_DB[st.session_state.phone]
+                
+                if mode == "change" and user_data["password"] != current_password:
+                    st.error("รหัสผ่านปัจจุบันไม่ถูกต้อง")
+                elif not new_password:
+                    st.error("รหัสผ่านใหม่ต้องไม่เป็นค่าว่าง")
+                elif new_password != confirm_password:
+                    st.error("รหัสผ่านใหม่และการยืนยันไม่ตรงกัน")
+                else:
+                    st.session_state.USERS_DB[st.session_state.phone]["password"] = new_password
+                    if mode == "change":
+                        st.success("บันทึกรหัสผ่านใหม่เรียบร้อยแล้ว!")
                         st.session_state.step = "dashboard"
-                        st.rerun() # สั่งให้แอปฯ โหลดใหม่เพื่อไปหน้า dashboard
+                        st.rerun()
                     else:
-                        st.error("รหัส OTP ไม่ถูกต้อง")
+                        st.success("ตั้งรหัสผ่านใหม่สำเร็จ! กรุณาล็อกอินอีกครั้ง")
+                        logout()
+            
+            if mode == "set":
+                if st.button("⬅️ กลับไปหน้าล็อกอิน", use_container_width=True):
+                    logout()
+            else: # mode == "change"
+                if st.button("⬅️ กลับไปหน้าแดชบอร์ด", use_container_width=True):
+                    st.session_state.step = "dashboard"
+                    st.rerun()
+
+def display_forgot_password_page():
+    """แสดงหน้าสำหรับลืมรหัสผ่านพร้อมการยืนยันจาก Admin"""
+    st.title("🔒 ลืมรหัสผ่าน")
+    st.markdown("กรุณาให้ผู้ดูแลระบบช่วยเหลือในการรีเซ็ตรหัสผ่าน")
+
+    col1, col2, col3 = st.columns([1, 1.5, 1])
+    with col2:
+        with st.container(border=True):
+            st.markdown("#### <div style='text-align: center;'>รีเซ็ตรหัสผ่าน</div>", unsafe_allow_html=True)
+            
+            user_phone = st.text_input("เบอร์โทรศัพท์พนักงานที่ลืมรหัส", placeholder="กรอกเบอร์โทรศัพท์ 10 หลัก", max_chars=10, key="forgot_user_phone")
+            admin_phone = st.text_input("เบอร์โทรศัพท์ผู้ดูแลระบบ", placeholder="กรอกเบอร์โทรศัพท์ผู้ดูแลระบบ", max_chars=10, type="password", key="forgot_admin_phone")
+            new_password = st.text_input("รหัสผ่านใหม่", type="password", key="new_password")
+            confirm_password = st.text_input("ยืนยันรหัสผ่านใหม่", type="password", key="confirm_new_password")
+
+            if st.button("💾 บันทึกรหัสผ่านใหม่", use_container_width=True, type="primary"):
+                if user_phone not in st.session_state.USERS_DB or st.session_state.USERS_DB[user_phone]["name"] == "ผู้ดูแลระบบ":
+                    st.error("ไม่พบเบอร์โทรศัพท์พนักงานนี้ในระบบ")
+                elif admin_phone != "0888888888":
+                    st.error("เบอร์โทรศัพท์ผู้ดูแลระบบไม่ถูกต้อง")
+                elif new_password != confirm_password or not new_password:
+                    st.error("รหัสผ่านใหม่และการยืนยันไม่ตรงกัน หรือเป็นค่าว่าง")
+                else:
+                    st.session_state.USERS_DB[user_phone]["password"] = new_password
+                    st.success("ตั้งรหัสผ่านใหม่สำเร็จแล้ว! กรุณากลับไปหน้าล็อกอิน")
+                    logout()
+
+        if st.button("⬅️ กลับไปหน้าล็อกอิน", use_container_width=True):
+            logout()
+
 
 def display_dashboard():
     """แสดง Dashboard ของผู้ใช้"""
-    
-    # --- Sidebar ---
     with st.sidebar:
         st.header("เมนู")
-        st.info("แดชบอร์ดนี้แสดงข้อมูลการเข้า-ออกงานส่วนบุคคล")
+        st.info(f"ยินดีต้อนรับ,\n**{st.session_state.user}**")
+        
+        # ปุ่มเปลี่ยนรหัสผ่าน
+        if st.button("🔑 เปลี่ยนรหัสผ่าน"):
+            st.session_state.step = "change_password"
+            st.rerun()
 
-    # --- Main Content ---
-    # --- ส่วนหัว (Header) ---
-    st.title(f"📊 แดชบอร์ดสรุปข้อมูล")
-    st.caption(f"ข้อมูลของคุณ: **{st.session_state.user}**")
-    
+    st.title(f"📊 แดชบอร์ดสรุปข้อมูลของ **{st.session_state.user}**")
+
     df_full = load_data()
 
-    # --- ส่วนเพิ่มเติม: แสดงช่วงวันที่ของข้อมูล ---
     if not df_full.empty and 'วันที่' in df_full.columns:
-        # ลบแถวที่วันที่เป็นค่าว่างเพื่อให้คำนวณได้ถูกต้อง
         df_full_cleaned = df_full.dropna(subset=['วันที่'])
         if not df_full_cleaned.empty:
             start_date = df_full_cleaned['วันที่'].min()
             end_date = df_full_cleaned['วันที่'].max()
             st.caption(f"ข้อมูลระหว่างวันที่: **{thai_date(start_date)}** ถึง **{thai_date(end_date)}**")
-    
     st.divider()
 
     df_user, summary = process_user_data(df_full, st.session_state.user)
 
     if summary.empty:
         st.info("ไม่พบข้อมูลการเข้า-ออกงานของคุณ")
-        # --- ส่วนท้าย (Footer) สำหรับปุ่มออกจากระบบ ---
-        # แม้ไม่พบข้อมูล ก็ยังต้องมีปุ่มออกจากระบบ
         st.divider()
         _ , btn_col, _ = st.columns([1, 0.5, 1])
         with btn_col:
             st.button("🚪 ออกจากระบบ", on_click=logout, use_container_width=True)
         return
 
-    # --- แสดงการ์ดข้อมูลสรุป (Metrics) ---
     st.markdown("### 🗓️ สรุปภาพรวม")
     col1, col2, col3, col4 = st.columns(4)
     col1.metric("ลาป่วย/ลากิจ (วัน)", summary["ลาป่วย/ลากิจ"].sum())
@@ -212,32 +290,26 @@ def display_dashboard():
     col4.metric("วันพักผ่อน (วัน)", int(summary["พักผ่อน"].sum()))
     st.divider()
 
-    # --- แสดงรายละเอียดและกราฟ ---
     st.markdown("### 📈 รายละเอียดและสถิติ")
-
     summary_melted = summary.melt(
         id_vars=["ชื่อ-สกุล"],
         value_vars=["ลาป่วย/ลากิจ", "ขาด", "สาย", "พักผ่อน"],
         var_name="ประเภท",
         value_name="จำนวนวัน/ครั้ง"
     )
-
     chart = alt.Chart(summary_melted).mark_bar().encode(
         x=alt.X('จำนวนวัน/ครั้ง:Q', title='จำนวน (วัน/ครั้ง)'),
         y=alt.Y('ประเภท:N', title='ประเภท', sort='-x'),
         color=alt.Color('ประเภท:N', 
-                        scale=alt.Scale(
-                            domain=['ลาป่วย/ลากิจ', 'ขาด', 'สาย', 'พักผ่อน'],
-                            range=['#FFC300', '#C70039', '#FF5733', '#33C1FF']
-                        ),
-                        legend=None),
+                         scale=alt.Scale(
+                             domain=['ลาป่วย/ลากิจ', 'ขาด', 'สาย', 'พักผ่อน'],
+                             range=['#FFC300', '#C70039', '#FF5733', '#33C1FF']
+                         ),
+                         legend=None),
         tooltip=['ประเภท', 'จำนวนวัน/ครั้ง']
-    ).properties(
-        title='กราฟเปรียบเทียบข้อมูล'
-    )
+    ).properties(title='กราฟเปรียบเทียบข้อมูล')
     st.altair_chart(chart, use_container_width=True)
 
-    # --- แสดงรายการวันที่แบบ Expander ---
     st.markdown("#### 📜 รายการวันที่")
     leave_types_map = {
         "ลาป่วย/ลากิจ": ["ลาป่วย", "ลากิจ", "ลาป่วยครึ่งวัน", "ลากิจครึ่งวัน"],
@@ -249,24 +321,26 @@ def display_dashboard():
     for leave_type, exceptions in leave_types_map.items():
         dates_df = df_user[df_user["ข้อยกเว้น"].isin(exceptions)]
         total_days = df_user[leave_type].sum()
-
         if not dates_df.empty:
             with st.expander(f"ดูวันที่ **{leave_type}** (รวม {total_days} วัน/ครั้ง)"):
-                # เรียงลำดับวันที่ก่อนแสดงผล
                 for _, row in dates_df.sort_values(by="วันที่").iterrows():
                     st.markdown(f"- **{thai_date(row['วันที่'])}**: {row['ข้อยกเว้น']}")
     
-    # --- ส่วนท้าย (Footer) สำหรับปุ่มออกจากระบบ ---
     st.divider()
-    _ , btn_col, _ = st.columns([1, 0.5, 1]) # สร้าง 3 คอลัมน์เพื่อให้ปุ่มอยู่ตรงกลาง
+    _ , btn_col, _ = st.columns([1, 0.5, 1])
     with btn_col:
         st.button("🚪 ออกจากระบบ", on_click=logout, use_container_width=True)
-
 
 # -----------------------------
 # Main App Logic
 # -----------------------------
 if st.session_state.step == "login":
     display_login_page()
-else:
+elif st.session_state.step == "set_password":
+    display_password_page(mode="set")
+elif st.session_state.step == "change_password":
+    display_password_page(mode="change")
+elif st.session_state.step == "forgot_password":
+    display_forgot_password_page()
+else: # dashboard
     display_dashboard()
