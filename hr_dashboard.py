@@ -312,7 +312,7 @@ def display_dashboard():
 
     # เนื้อหาหลักของแดชบอร์ด
     st.header("📊 แดชบอร์ดสรุปข้อมูล")
-    st.subheader(f"ของ **{st.session_state.user}**")
+    st.subheader(f" **{st.session_state.user}**")
 
     df_full = load_data()
 
