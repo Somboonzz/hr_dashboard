@@ -364,7 +364,7 @@ def display_dashboard():
                     check_in_time = format_time(row.get('เข้างาน')) if 'เข้างาน' in row and pd.notna(row.get('เข้างาน')) else "N/A"
                     check_out_time = format_time(row.get('ออกงาน')) if 'ออกงาน' in row and pd.notna(row.get('ออกงาน')) else "N/A"
                     st.markdown(
-                        f'<p style="font-size: 0.9rem; margin: 0;">- <b>{thai_date(row["วันที่"])}</b>: เข้างาน {check_in_time} ออกงาน {check_out_time} ({row["ข้อยกเว้น"]})</p>',
+                        f'<p style="font-size: 0.9rem; margin: 0;">- <b>{thai_date(row["วันที่"])}</b>: {check_in_time}-{check_out_time} ({row["ข้อยกเว้น"]})</p>',
                         unsafe_allow_html=True
                     )
     
