@@ -164,12 +164,7 @@ def display_login_page():
             st.session_state.forgot_step = "input_phones"
             st.rerun()
             
-        with st.expander("แสดงรายชื่อผู้ใช้งานสำหรับการทดสอบ"):
-            st.write("รายชื่อและเบอร์โทรศัพท์ที่ใช้ล็อกอินได้:")
-            for phone, user_data in st.session_state.USERS_DB.items():
-                st.markdown(f"- **{user_data['name']}**: `{phone}`")
-
-
+        
 def display_password_page(mode="set"):
     """แสดงหน้าสำหรับตั้งค่าหรือเปลี่ยนรหัสผ่าน"""
     title_map = {
