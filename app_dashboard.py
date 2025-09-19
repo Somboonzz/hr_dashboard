@@ -366,7 +366,8 @@ def display_dashboard():
                     check_in_time = format_time(row.get('เข้างาน'))
                     check_out_time = format_time(row.get('ออกงาน'))
                     
-                    time_display = f" {check_in_time}-{check_out_time}"
+                    # ปรับปรุงการแสดงผลเพื่อป้องกันการแบ่งบรรทัด
+                    time_display = f' <span style="white-space: nowrap;">{check_in_time}-{check_out_time}</span>'
 
                     st.markdown(
                         f'<p style="font-size: 0.9rem; margin: 0;">- <b>{thai_date(row["วันที่"])}</b>{time_display} ({row["ข้อยกเว้น"]})</p>',
