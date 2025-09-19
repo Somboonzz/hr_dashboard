@@ -39,8 +39,6 @@ def thai_date(dt):
 
 def format_time(dt):
     """แปลง datetime object เป็นสตริงเวลา (ชม.:นาที)"""
-    # แก้ไขให้แสดงเป็น 00:00 ถ้าเป็นค่าว่าง (NaT)
-    # หรือเป็นเวลาเที่ยงคืน (00:00) ที่มักจะหมายถึงค่าว่างใน Excel
     if pd.isna(dt) or (isinstance(dt, datetime.time) and dt == datetime.time(0, 0)):
         return "00:00"
     return dt.strftime("%H:%M")
@@ -51,7 +49,6 @@ def format_time(dt):
 @st.cache_data
 def load_data(file_path="attendances.xlsx"):
     """โหลดข้อมูลจากไฟล์ Excel หรือ CSV และคืนค่าเป็น DataFrame"""
-    # ตรวจสอบว่าไฟล์ที่ต้องการเป็นนามสกุลอะไร
     file_extension = os.path.splitext(file_path)[1].lower()
     
     if not os.path.exists(file_path):
@@ -67,7 +64,6 @@ def load_data(file_path="attendances.xlsx"):
             st.error(f"รูปแบบไฟล์ไม่รองรับ: {file_extension}")
             return pd.DataFrame()
         
-        # ประมวลผลข้อมูลใน DataFrame
         if 'วันที่' in df.columns:
             df['วันที่'] = pd.to_datetime(df['วันที่'], errors='coerce')
         if 'เข้างาน' in df.columns:
@@ -121,7 +117,6 @@ def load_user_db():
             with open("users_db.json", "r", encoding="utf-8") as f:
                 return json.load(f)
         else:
-            # ใช้ข้อมูลตัวอย่างและบันทึกลงไฟล์
             initial_db = {
                 "0989620358": {"name": "นายสมบูรณ์ เหนือกอง", "password": None},
                 "0951646928": {"name": "นางสาวพรทิพย์ สุขอนันต์", "password": None},
@@ -131,9 +126,7 @@ def load_user_db():
                 "0834396720": {"name": "นางกุสุมา อินตรา", "password": None},
                 "0851109039": {"name": "นางวรนุช กลัดสำเนียง", "password": None},
                 "0888888888": {"name": "ผู้ดูแลระบบ", "password": "admin"},
-                "0922849312": {"name": "นายชาคริต สุทธิผล", "password": None},
-                "0987654321": {"name": "ทดสอบ สุขใจ", "password": None},
-                "0811234567": {"name": "นายอภิชาติ พัฒนาสุข", "password": None}
+          
             }
             with open("users_db.json", "w", encoding="utf-8") as f:
                 json.dump(initial_db, f, indent=4)
@@ -184,21 +177,11 @@ def display_login_page():
         with st.container(border=True):
             st.markdown("#### <div style='text-align: center;'>เข้าสู่ระบบ</div>", unsafe_allow_html=True)
             
-            # ใช้ inputmode="tel" เพื่อเปิดแป้นตัวเลขบนมือถือ
+            # แก้ไข: ลบพารามิเตอร์ unsafe_allow_html
             phone = st.text_input(
                 "เบอร์โทรศัพท์",
                 placeholder="กรอกเบอร์โทรศัพท์ 10 หลัก",
-                max_chars=10,
-                # นี่คือส่วนที่เพิ่มเข้าไป
-                help='''<style>
-                input[type="text"][aria-label="เบอร์โทรศัพท์"] {
-                    -webkit-user-modify: read-write-plaintext-only;
-                }
-                </style>
-                <script>
-                document.querySelector('input[aria-label="เบอร์โทรศัพท์"]').setAttribute('inputmode', 'tel');
-                </script>''',
-                unsafe_allow_html=True
+                max_chars=10
             )
             password = st.text_input(
                 "รหัสผ่าน",
@@ -224,12 +207,10 @@ def display_login_page():
                     st.error("ไม่พบเบอร์โทรศัพท์นี้ในระบบ")
 
         st.markdown("---")
-        # เพิ่มปุ่มสำหรับฟังก์ชันลืมรหัสผ่าน
         if st.button("🔒 ลืมรหัสผ่าน", use_container_width=True):
             st.session_state.step = "forgot_password"
             st.session_state.forgot_step = "input_phones"
             st.rerun()
-            
             
 def display_password_page(mode="set"):
     """แสดงหน้าสำหรับตั้งค่าหรือเปลี่ยนรหัสผ่าน"""
@@ -263,7 +244,7 @@ def display_password_page(mode="set"):
                     st.error("รหัสผ่านใหม่และการยืนยันไม่ตรงกัน")
                 else:
                     st.session_state.USERS_DB[st.session_state.phone]["password"] = new_password
-                    save_user_db() # เรียกใช้ฟังก์ชันบันทึกข้อมูล
+                    save_user_db()
                     if mode == "change":
                         st.success("บันทึกรหัสผ่านใหม่เรียบร้อยแล้ว!")
                         st.session_state.step = "dashboard"
@@ -275,7 +256,7 @@ def display_password_page(mode="set"):
             if mode == "set":
                 if st.button("⬅️ กลับไปหน้าล็อกอิน", use_container_width=True):
                     logout()
-            else: # mode == "change"
+            else:
                 if st.button("⬅️ กลับไปหน้าแดชบอร์ด", use_container_width=True):
                     st.session_state.step = "dashboard"
                     st.rerun()
@@ -290,40 +271,20 @@ def display_forgot_password_page():
         with st.container(border=True):
             st.markdown("#### <div style='text-align: center;'>รีเซ็ตรหัสผ่าน</div>", unsafe_allow_html=True)
             
-            # ใช้ inputmode="tel" เพื่อเปิดแป้นตัวเลขบนมือถือ
+            # แก้ไข: ลบพารามิเตอร์ unsafe_allow_html
             user_phone = st.text_input(
                 "เบอร์โทรศัพท์พนักงานที่ลืมรหัส", 
                 placeholder="กรอกเบอร์โทรศัพท์ 10 หลัก", 
                 max_chars=10, 
-                key="forgot_user_phone",
-                # นี่คือส่วนที่เพิ่มเข้าไป
-                help='''<style>
-                input[type="text"][aria-label="เบอร์โทรศัพท์พนักงานที่ลืมรหัส"] {
-                    -webkit-user-modify: read-write-plaintext-only;
-                }
-                </style>
-                <script>
-                document.querySelector('input[aria-label="เบอร์โทรศัพท์พนักงานที่ลืมรหัส"]').setAttribute('inputmode', 'tel');
-                </script>''',
-                unsafe_allow_html=True
+                key="forgot_user_phone"
             )
-            # ใช้ inputmode="tel" เพื่อเปิดแป้นตัวเลขบนมือถือ
+            # แก้ไข: ลบพารามิเตอร์ unsafe_allow_html
             admin_phone = st.text_input(
                 "เบอร์โทรศัพท์ผู้ดูแลระบบ", 
                 placeholder="กรอกเบอร์โทรศัพท์ผู้ดูแลระบบ", 
                 max_chars=10, 
                 type="password", 
-                key="forgot_admin_phone",
-                # นี่คือส่วนที่เพิ่มเข้าไป
-                help='''<style>
-                input[type="password"][aria-label="เบอร์โทรศัพท์ผู้ดูแลระบบ"] {
-                    -webkit-user-modify: read-write-plaintext-only;
-                }
-                </style>
-                <script>
-                document.querySelector('input[aria-label="เบอร์โทรศัพท์ผู้ดูแลระบบ"]').setAttribute('inputmode', 'tel');
-                </script>''',
-                unsafe_allow_html=True
+                key="forgot_admin_phone"
             )
             new_password = st.text_input("รหัสผ่านใหม่", type="password", key="new_password")
             confirm_password = st.text_input("ยืนยันรหัสผ่านใหม่", type="password", key="confirm_new_password")
@@ -337,7 +298,7 @@ def display_forgot_password_page():
                     st.error("รหัสผ่านใหม่และการยืนยันไม่ตรงกัน หรือเป็นค่าว่าง")
                 else:
                     st.session_state.USERS_DB[user_phone]["password"] = new_password
-                    save_user_db() # เรียกใช้ฟังก์ชันบันทึกข้อมูล
+                    save_user_db()
                     st.success("ตั้งรหัสผ่านใหม่สำเร็จแล้ว! กรุณากลับไปหน้าล็อกอิน")
                     logout()
 
@@ -347,21 +308,17 @@ def display_forgot_password_page():
 
 def display_dashboard():
     """แสดง Dashboard ของผู้ใช้"""
-    # เนื้อหาใน st.sidebar จะถูกย้ายไปในเมนู 3 ขีดโดยอัตโนมัติบนมือถือ
     with st.sidebar:
         st.header("เมนู")
         st.info(f"ยินดีต้อนรับ,\n**{st.session_state.user}**")
         
-        # ปุ่มเปลี่ยนรหัสผ่าน
         if st.button("🔑 เปลี่ยนรหัสผ่าน"):
             st.session_state.step = "change_password"
             st.rerun()
         
-        # ปุ่มออกจากระบบ
         st.divider()
         st.button("🚪 ออกจากระบบ", on_click=logout, use_container_width=True)
 
-    # เนื้อหาหลักของแดชบอร์ด
     st.header("📊 แดชบอร์ดสรุปข้อมูล")
     st.subheader(f" **{st.session_state.user}**")
 
@@ -372,7 +329,6 @@ def display_dashboard():
         if not df_full_cleaned.empty:
             start_date = df_full_cleaned['วันที่'].min()
             end_date = df_full_cleaned['วันที่'].max()
-            # ใช้ st.markdown และ CSS เพื่อควบคุมขนาดตัวอักษร
             st.markdown(
                 f'<p style="font-size: 0.8rem; margin: 0;">ข้อมูลระหว่างวันที่: <b>{thai_date(start_date)}</b> ถึง <b>{thai_date(end_date)}</b></p>',
                 unsafe_allow_html=True
@@ -430,7 +386,6 @@ def display_dashboard():
                     check_in_time = format_time(row.get('เข้างาน'))
                     check_out_time = format_time(row.get('ออกงาน'))
                     
-                    # ปรับปรุงการแสดงผลเพื่อป้องกันการแบ่งบรรทัด
                     time_display = f' <span style="white-space: nowrap;">{check_in_time}-{check_out_time}</span>'
 
                     st.markdown(
@@ -439,7 +394,6 @@ def display_dashboard():
                     )
     
     st.divider()
-    # ปุ่มออกจากระบบที่ด้านล่างของหน้าหลัก (สำหรับหน้าจอขนาดใหญ่)
     _ , btn_col, _ = st.columns([1, 0.5, 1])
     with btn_col:
         st.button("🚪 ออกจากระบบ", on_click=logout, use_container_width=True)
@@ -455,5 +409,5 @@ elif st.session_state.step == "change_password":
     display_password_page(mode="change")
 elif st.session_state.step == "forgot_password":
     display_forgot_password_page()
-else: # dashboard
+else:
     display_dashboard()
