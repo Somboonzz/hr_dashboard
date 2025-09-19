@@ -360,11 +360,13 @@ def display_dashboard():
         if not dates_df.empty:
             with st.expander(f"ดูวันที่ **{leave_type}** (รวม {total_days} วัน/ครั้ง)"):
                 for _, row in dates_df.sort_values(by="วันที่").iterrows():
-                    # ใช้ .get() เพื่อป้องกัน Key Error ถ้าคอลัมน์ไม่มีอยู่
                     check_in_time = format_time(row.get('เข้างาน')) if 'เข้างาน' in row and pd.notna(row.get('เข้างาน')) else "N/A"
                     check_out_time = format_time(row.get('ออกงาน')) if 'ออกงาน' in row and pd.notna(row.get('ออกงาน')) else "N/A"
+                    
+                    time_display = f" {check_in_time}-{check_out_time}"
+
                     st.markdown(
-                        f'<p style="font-size: 0.9rem; margin: 0;">- <b>{thai_date(row["วันที่"])}</b>: {check_in_time}-{check_out_time} ({row["ข้อยกเว้น"]})</p>',
+                        f'<p style="font-size: 0.9rem; margin: 0;">- <b>{thai_date(row["วันที่"])}</b>{time_display} ({row["ข้อยกเว้น"]})</p>',
                         unsafe_allow_html=True
                     )
     
