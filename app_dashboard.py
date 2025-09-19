@@ -37,12 +37,21 @@ def thai_date(dt):
         return "N/A"
     return dt.strftime(f"%d/%m/{dt.year + 543}")
 
-def format_time(dt):
-    """แปลง datetime object เป็นสตริงเวลา (ชม.:นาที)"""
-    # กลับมาแสดงเป็น N/A ถ้าเป็นค่าว่างหรือ NaT
-    if pd.isna(dt):
-        return "N/A"
-    return dt.strftime("%H:%M")
+def format_time(val):
+    """แปลงค่าเวลาให้เป็นสตริง HH:MM หรือ 00:00"""
+    if pd.isna(val) or val in ["-", "", None]:
+        return "00:00"
+    try:
+        if isinstance(val, datetime.time):
+            return val.strftime("%H:%M")
+        if isinstance(val, datetime.datetime):
+            return val.strftime("%H:%M")
+        parsed = pd.to_datetime(str(val), errors="coerce")
+        if pd.isna(parsed):
+            return "00:00"
+        return parsed.strftime("%H:%M")
+    except:
+        return "00:00"
 
 # -----------------------------
 # การจัดการข้อมูล
@@ -55,12 +64,23 @@ def load_data(file_path="attendances.xlsx"):
             df = pd.read_excel(file_path, engine='openpyxl')
             if 'วันที่' in df.columns:
                 df['วันที่'] = pd.to_datetime(df['วันที่'], errors='coerce')
+
+            def parse_time(val):
+                if pd.isna(val) or val in ["-", "", None]:
+                    return datetime.time(0, 0)
+                try:
+                    parsed = pd.to_datetime(str(val), format='%H:%M', errors='coerce')
+                    if pd.isna(parsed):
+                        return datetime.time(0, 0)
+                    return parsed.time()
+                except:
+                    return datetime.time(0, 0)
+
             if 'เข้างาน' in df.columns:
-                # จัดการข้อมูลเวลาที่อาจเป็นค่าว่างหรือ '-'
-                df['เข้างาน'] = pd.to_datetime(df['เข้างาน'], format='%H:%M', errors='coerce').dt.time
+                df['เข้างาน'] = df['เข้างาน'].apply(parse_time)
             if 'ออกงาน' in df.columns:
-                # จัดการข้อมูลเวลาที่อาจเป็นค่าว่างหรือ '-'
-                df['ออกงาน'] = pd.to_datetime(df['ออกงาน'], format='%H:%M', errors='coerce').dt.time
+                df['ออกงาน'] = df['ออกงาน'].apply(parse_time)
+
             return df
         except Exception as e:
             st.error(f"เกิดข้อผิดพลาดในการอ่านไฟล์ Excel: {e}")
@@ -108,7 +128,6 @@ def load_user_db():
             with open("users_db.json", "r", encoding="utf-8") as f:
                 return json.load(f)
         else:
-            # ใช้ข้อมูลตัวอย่างและบันทึกลงไฟล์
             initial_db = {
                 "0989620358": {"name": "นายสมบูรณ์ เหนือกอง", "password": None},
                 "0951646928": {"name": "นางสาวพรทิพย์ สุขอนันต์", "password": None},
@@ -139,7 +158,6 @@ if "step" not in st.session_state:
     st.session_state.reset_phone = ""
     st.session_state.USERS_DB = load_user_db()
 
-
 def logout():
     """เคลียร์ Session State และกลับไปหน้า Login"""
     keys_to_reset = ["step", "phone", "user", "forgot_step", "temp_otp", "reset_phone"]
@@ -152,9 +170,7 @@ def logout():
 # -----------------------------
 # ส่วนแสดงผล (UI)
 # -----------------------------
-
 def display_login_page():
-    """แสดงฟอร์มสำหรับล็อกอินด้วยรหัสผ่าน"""
     st.title("📊 HR Dashboard")
     st.markdown("กรุณาเข้าสู่ระบบเพื่อดูข้อมูลการเข้า-ออกงานของคุณ")
 
@@ -164,16 +180,8 @@ def display_login_page():
         with st.container(border=True):
             st.markdown("#### <div style='text-align: center;'>เข้าสู่ระบบ</div>", unsafe_allow_html=True)
             
-            phone = st.text_input(
-                "เบอร์โทรศัพท์",
-                placeholder="กรอกเบอร์โทรศัพท์ 10 หลัก",
-                max_chars=10
-            )
-            password = st.text_input(
-                "รหัสผ่าน",
-                type="password",
-                placeholder="กรอกรหัสผ่าน"
-            )
+            phone = st.text_input("เบอร์โทรศัพท์", placeholder="กรอกเบอร์โทรศัพท์ 10 หลัก", max_chars=10)
+            password = st.text_input("รหัสผ่าน", type="password", placeholder="กรอกรหัสผ่าน")
 
             if st.button("✅ เข้าสู่ระบบ", use_container_width=True, type="primary"):
                 if phone in st.session_state.USERS_DB:
@@ -193,15 +201,12 @@ def display_login_page():
                     st.error("ไม่พบเบอร์โทรศัพท์นี้ในระบบ")
 
         st.markdown("---")
-        # เพิ่มปุ่มสำหรับฟังก์ชันลืมรหัสผ่าน
         if st.button("🔒 ลืมรหัสผ่าน", use_container_width=True):
             st.session_state.step = "forgot_password"
             st.session_state.forgot_step = "input_phones"
             st.rerun()
-            
-            
+
 def display_password_page(mode="set"):
-    """แสดงหน้าสำหรับตั้งค่าหรือเปลี่ยนรหัสผ่าน"""
     title_map = {
         "set": "ตั้งรหัสผ่านครั้งแรก",
         "change": "เปลี่ยนรหัสผ่าน",
@@ -232,7 +237,7 @@ def display_password_page(mode="set"):
                     st.error("รหัสผ่านใหม่และการยืนยันไม่ตรงกัน")
                 else:
                     st.session_state.USERS_DB[st.session_state.phone]["password"] = new_password
-                    save_user_db() # เรียกใช้ฟังก์ชันบันทึกข้อมูล
+                    save_user_db()
                     if mode == "change":
                         st.success("บันทึกรหัสผ่านใหม่เรียบร้อยแล้ว!")
                         st.session_state.step = "dashboard"
@@ -244,13 +249,12 @@ def display_password_page(mode="set"):
             if mode == "set":
                 if st.button("⬅️ กลับไปหน้าล็อกอิน", use_container_width=True):
                     logout()
-            else: # mode == "change"
+            else:
                 if st.button("⬅️ กลับไปหน้าแดชบอร์ด", use_container_width=True):
                     st.session_state.step = "dashboard"
                     st.rerun()
 
 def display_forgot_password_page():
-    """แสดงหน้าสำหรับลืมรหัสผ่านพร้อมการยืนยันจาก Admin"""
     st.title("🔒 ลืมรหัสผ่าน")
     st.markdown("กรุณาให้ผู้ดูแลระบบช่วยเหลือในการรีเซ็ตรหัสผ่าน")
 
@@ -273,31 +277,25 @@ def display_forgot_password_page():
                     st.error("รหัสผ่านใหม่และการยืนยันไม่ตรงกัน หรือเป็นค่าว่าง")
                 else:
                     st.session_state.USERS_DB[user_phone]["password"] = new_password
-                    save_user_db() # เรียกใช้ฟังก์ชันบันทึกข้อมูล
+                    save_user_db()
                     st.success("ตั้งรหัสผ่านใหม่สำเร็จแล้ว! กรุณากลับไปหน้าล็อกอิน")
                     logout()
 
         if st.button("⬅️ กลับไปหน้าล็อกอิน", use_container_width=True):
             logout()
 
-
 def display_dashboard():
-    """แสดง Dashboard ของผู้ใช้"""
-    # เนื้อหาใน st.sidebar จะถูกย้ายไปในเมนู 3 ขีดโดยอัตโนมัติบนมือถือ
     with st.sidebar:
         st.header("เมนู")
         st.info(f"ยินดีต้อนรับ,\n**{st.session_state.user}**")
         
-        # ปุ่มเปลี่ยนรหัสผ่าน
         if st.button("🔑 เปลี่ยนรหัสผ่าน"):
             st.session_state.step = "change_password"
             st.rerun()
         
-        # ปุ่มออกจากระบบ
         st.divider()
         st.button("🚪 ออกจากระบบ", on_click=logout, use_container_width=True)
 
-    # เนื้อหาหลักของแดชบอร์ด
     st.header("📊 แดชบอร์ดสรุปข้อมูล")
     st.subheader(f"ของ **{st.session_state.user}**")
 
@@ -308,7 +306,6 @@ def display_dashboard():
         if not df_full_cleaned.empty:
             start_date = df_full_cleaned['วันที่'].min()
             end_date = df_full_cleaned['วันที่'].max()
-            # ใช้ st.markdown และ CSS เพื่อควบคุมขนาดตัวอักษร
             st.markdown(
                 f'<p style="font-size: 0.8rem; margin: 0;">ข้อมูลระหว่างวันที่: <b>{thai_date(start_date)}</b> ถึง <b>{thai_date(end_date)}</b></p>',
                 unsafe_allow_html=True
@@ -374,7 +371,6 @@ def display_dashboard():
                     )
     
     st.divider()
-    # ปุ่มออกจากระบบที่ด้านล่างของหน้าหลัก (สำหรับหน้าจอขนาดใหญ่)
     _ , btn_col, _ = st.columns([1, 0.5, 1])
     with btn_col:
         st.button("🚪 ออกจากระบบ", on_click=logout, use_container_width=True)
@@ -390,5 +386,5 @@ elif st.session_state.step == "change_password":
     display_password_page(mode="change")
 elif st.session_state.step == "forgot_password":
     display_forgot_password_page()
-else: # dashboard
+else:
     display_dashboard()
