@@ -1,1 +1,1 @@
-streamlit run app_dashboard.py
+streamlit run hr_dashboard.py
