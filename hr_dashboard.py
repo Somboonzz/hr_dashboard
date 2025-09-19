@@ -184,10 +184,21 @@ def display_login_page():
         with st.container(border=True):
             st.markdown("#### <div style='text-align: center;'>เข้าสู่ระบบ</div>", unsafe_allow_html=True)
             
+            # ใช้ inputmode="tel" เพื่อเปิดแป้นตัวเลขบนมือถือ
             phone = st.text_input(
                 "เบอร์โทรศัพท์",
                 placeholder="กรอกเบอร์โทรศัพท์ 10 หลัก",
-                max_chars=10
+                max_chars=10,
+                # นี่คือส่วนที่เพิ่มเข้าไป
+                help='''<style>
+                input[type="text"][aria-label="เบอร์โทรศัพท์"] {
+                    -webkit-user-modify: read-write-plaintext-only;
+                }
+                </style>
+                <script>
+                document.querySelector('input[aria-label="เบอร์โทรศัพท์"]').setAttribute('inputmode', 'tel');
+                </script>''',
+                unsafe_allow_html=True
             )
             password = st.text_input(
                 "รหัสผ่าน",
@@ -279,8 +290,41 @@ def display_forgot_password_page():
         with st.container(border=True):
             st.markdown("#### <div style='text-align: center;'>รีเซ็ตรหัสผ่าน</div>", unsafe_allow_html=True)
             
-            user_phone = st.text_input("เบอร์โทรศัพท์พนักงานที่ลืมรหัส", placeholder="กรอกเบอร์โทรศัพท์ 10 หลัก", max_chars=10, key="forgot_user_phone")
-            admin_phone = st.text_input("เบอร์โทรศัพท์ผู้ดูแลระบบ", placeholder="กรอกเบอร์โทรศัพท์ผู้ดูแลระบบ", max_chars=10, type="password", key="forgot_admin_phone")
+            # ใช้ inputmode="tel" เพื่อเปิดแป้นตัวเลขบนมือถือ
+            user_phone = st.text_input(
+                "เบอร์โทรศัพท์พนักงานที่ลืมรหัส", 
+                placeholder="กรอกเบอร์โทรศัพท์ 10 หลัก", 
+                max_chars=10, 
+                key="forgot_user_phone",
+                # นี่คือส่วนที่เพิ่มเข้าไป
+                help='''<style>
+                input[type="text"][aria-label="เบอร์โทรศัพท์พนักงานที่ลืมรหัส"] {
+                    -webkit-user-modify: read-write-plaintext-only;
+                }
+                </style>
+                <script>
+                document.querySelector('input[aria-label="เบอร์โทรศัพท์พนักงานที่ลืมรหัส"]').setAttribute('inputmode', 'tel');
+                </script>''',
+                unsafe_allow_html=True
+            )
+            # ใช้ inputmode="tel" เพื่อเปิดแป้นตัวเลขบนมือถือ
+            admin_phone = st.text_input(
+                "เบอร์โทรศัพท์ผู้ดูแลระบบ", 
+                placeholder="กรอกเบอร์โทรศัพท์ผู้ดูแลระบบ", 
+                max_chars=10, 
+                type="password", 
+                key="forgot_admin_phone",
+                # นี่คือส่วนที่เพิ่มเข้าไป
+                help='''<style>
+                input[type="password"][aria-label="เบอร์โทรศัพท์ผู้ดูแลระบบ"] {
+                    -webkit-user-modify: read-write-plaintext-only;
+                }
+                </style>
+                <script>
+                document.querySelector('input[aria-label="เบอร์โทรศัพท์ผู้ดูแลระบบ"]').setAttribute('inputmode', 'tel');
+                </script>''',
+                unsafe_allow_html=True
+            )
             new_password = st.text_input("รหัสผ่านใหม่", type="password", key="new_password")
             confirm_password = st.text_input("ยืนยันรหัสผ่านใหม่", type="password", key="confirm_new_password")
 
