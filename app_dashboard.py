@@ -39,8 +39,9 @@ def thai_date(dt):
 
 def format_time(dt):
     """แปลง datetime object เป็นสตริงเวลา (ชม.:นาที)"""
+    # แก้ไขให้แสดงเป็น 00:00 ถ้าเป็นค่าว่างหรือ NaT
     if pd.isna(dt):
-        return "N/A"
+        return "00:00"
     return dt.strftime("%H:%M")
 
 # -----------------------------
@@ -55,9 +56,11 @@ def load_data(file_path="attendances.xlsx"):
             if 'วันที่' in df.columns:
                 df['วันที่'] = pd.to_datetime(df['วันที่'], errors='coerce')
             if 'เข้างาน' in df.columns:
-                df['เข้างาน'] = pd.to_datetime(df['เข้างาน'], errors='coerce').dt.time
+                # แก้ไขเพื่อจัดการข้อมูลเวลาที่อาจเป็นค่าว่างหรือ '-'
+                df['เข้างาน'] = pd.to_datetime(df['เข้างาน'], format='%H:%M', errors='coerce').dt.time
             if 'ออกงาน' in df.columns:
-                df['ออกงาน'] = pd.to_datetime(df['ออกงาน'], errors='coerce').dt.time
+                # แก้ไขเพื่อจัดการข้อมูลเวลาที่อาจเป็นค่าว่างหรือ '-'
+                df['ออกงาน'] = pd.to_datetime(df['ออกงาน'], format='%H:%M', errors='coerce').dt.time
             return df
         except Exception as e:
             st.error(f"เกิดข้อผิดพลาดในการอ่านไฟล์ Excel: {e}")
@@ -360,8 +363,8 @@ def display_dashboard():
         if not dates_df.empty:
             with st.expander(f"ดูวันที่ **{leave_type}** (รวม {total_days} วัน/ครั้ง)"):
                 for _, row in dates_df.sort_values(by="วันที่").iterrows():
-                    check_in_time = format_time(row.get('เข้างาน')) if 'เข้างาน' in row and pd.notna(row.get('เข้างาน')) else "N/A"
-                    check_out_time = format_time(row.get('ออกงาน')) if 'ออกงาน' in row and pd.notna(row.get('ออกงาน')) else "N/A"
+                    check_in_time = format_time(row.get('เข้างาน')) if 'เข้างาน' in row and pd.notna(row.get('เข้างาน')) else "00:00"
+                    check_out_time = format_time(row.get('ออกงาน')) if 'ออกงาน' in row and pd.notna(row.get('ออกงาน')) else "00:00"
                     
                     time_display = f" {check_in_time}-{check_out_time}"
 
