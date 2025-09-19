@@ -127,8 +127,7 @@ def load_user_db():
                 "0951646928": {"name": "นางสาวพรทิพย์ สุขอนันต์", "password": None},
                 "0618741894": {"name": "นายอมร เพ็งโสภา", "password": None},
                 "0888888888": {"name": "ผู้ดูแลระบบ", "password": "admin"},
-                "0918802121": {"name": "นางนิภาพร ไพโรจน์ฤทธิ์กุล", "password": None},
-                
+                                
             }
             with open("users_db.json", "w", encoding="utf-8") as f:
                 json.dump(initial_db, f, indent=4)
