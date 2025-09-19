@@ -5,6 +5,7 @@ import datetime
 import os
 import pytz
 import random
+import json
 
 # -----------------------------
 # การตั้งค่าหน้าเว็บและสไตล์
@@ -39,7 +40,7 @@ def thai_date(dt):
 # -----------------------------
 # การจัดการข้อมูล
 # -----------------------------
-@st.cache_data # Cache ข้อมูลเพื่อประสิทธิภาพที่ดีขึ้น
+@st.cache_data
 def load_data(file_path="attendances.xlsx"):
     """โหลดข้อมูลจากไฟล์ Excel และคืนค่าเป็น DataFrame"""
     if file_path and os.path.exists(file_path):
@@ -87,6 +88,35 @@ def process_user_data(df, user_name):
 # -----------------------------
 # การจัดการ Session State และ Authentication
 # -----------------------------
+def load_user_db():
+    """โหลดฐานข้อมูลผู้ใช้จากไฟล์ JSON ถ้ามี"""
+    try:
+        if os.path.exists("users_db.json"):
+            with open("users_db.json", "r", encoding="utf-8") as f:
+                return json.load(f)
+        else:
+            # ใช้ข้อมูลตัวอย่างและบันทึกลงไฟล์
+            initial_db = {
+                "0989620358": {"name": "นายสมบูรณ์ เหนือกอง", "password": None},
+                "0951646928": {"name": "นางสาวพรทิพย์ สุขอนันต์", "password": None},
+                "0618741894": {"name": "นายอมร เพ็งโสภา", "password": None},
+                "0888888888": {"name": "ผู้ดูแลระบบ", "password": "admin"},
+            }
+            with open("users_db.json", "w", encoding="utf-8") as f:
+                json.dump(initial_db, f, indent=4)
+            return initial_db
+    except Exception as e:
+        st.error(f"Error loading user database: {e}")
+        return {}
+
+def save_user_db():
+    """บันทึกฐานข้อมูลผู้ใช้ลงไฟล์ JSON"""
+    try:
+        with open("users_db.json", "w", encoding="utf-8") as f:
+            json.dump(st.session_state.USERS_DB, f, indent=4)
+    except Exception as e:
+        st.error(f"Error saving user database: {e}")
+
 if "step" not in st.session_state:
     st.session_state.step = "login"
     st.session_state.phone = ""
@@ -94,16 +124,8 @@ if "step" not in st.session_state:
     st.session_state.forgot_step = "input_phones"
     st.session_state.temp_otp = ""
     st.session_state.reset_phone = ""
+    st.session_state.USERS_DB = load_user_db()
 
-# ผู้ใช้ตัวอย่าง (ในระบบจริงควรดึงจากฐานข้อมูลและมีการเข้ารหัสรหัสผ่าน)
-# password: None หมายถึงยังไม่ได้ตั้งรหัสผ่าน
-if "USERS_DB" not in st.session_state:
-    st.session_state.USERS_DB = {
-        "0989620358": {"name": "นายสมบูรณ์ เหนือกอง", "password": None},
-        "0951646928": {"name": "นางสาวพรทิพย์ สุขอนันต์", "password": None},
-        "0618741894": {"name": "นายอมร เพ็งโสภา", "password": None},
-        "0888888888": {"name": "ผู้ดูแลระบบ", "password": "admin"},
-    }
 
 def logout():
     """เคลียร์ Session State และกลับไปหน้า Login"""
@@ -197,6 +219,7 @@ def display_password_page(mode="set"):
                     st.error("รหัสผ่านใหม่และการยืนยันไม่ตรงกัน")
                 else:
                     st.session_state.USERS_DB[st.session_state.phone]["password"] = new_password
+                    save_user_db() # เรียกใช้ฟังก์ชันบันทึกข้อมูล
                     if mode == "change":
                         st.success("บันทึกรหัสผ่านใหม่เรียบร้อยแล้ว!")
                         st.session_state.step = "dashboard"
@@ -237,6 +260,7 @@ def display_forgot_password_page():
                     st.error("รหัสผ่านใหม่และการยืนยันไม่ตรงกัน หรือเป็นค่าว่าง")
                 else:
                     st.session_state.USERS_DB[user_phone]["password"] = new_password
+                    save_user_db() # เรียกใช้ฟังก์ชันบันทึกข้อมูล
                     st.success("ตั้งรหัสผ่านใหม่สำเร็จแล้ว! กรุณากลับไปหน้าล็อกอิน")
                     logout()
 
