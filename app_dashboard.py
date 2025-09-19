@@ -285,7 +285,7 @@ def display_dashboard():
         st.button("🚪 ออกจากระบบ", on_click=logout, use_container_width=True)
 
     # เนื้อหาหลักของแดชบอร์ด
-    st.title(f"📊 แดชบอร์ดสรุปข้อมูลของ **{st.session_state.user}**")
+    st.header(f"📊 แดชบอร์ดสรุปข้อมูลของ **{st.session_state.user}**")
 
     df_full = load_data()
 
