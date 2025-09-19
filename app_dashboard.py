@@ -39,8 +39,8 @@ def thai_date(dt):
 
 def format_time(dt):
     """แปลง datetime object เป็นสตริงเวลา (ชม.:นาที)"""
-    # แก้ไขให้แสดงเป็น 00:00 ถ้าเป็นค่าว่าง, NaT, หรือเวลาเป็น 00:00:00
-    if pd.isna(dt) or (isinstance(dt, datetime.time) and dt == datetime.time(0, 0, 0)):
+    # แก้ไขให้แสดงเป็น 00:00 เฉพาะเมื่อเป็นค่าว่างหรือ NaT เท่านั้น
+    if pd.isna(dt):
         return "00:00"
     return dt.strftime("%H:%M")
 
