@@ -131,7 +131,9 @@ def load_user_db():
                 "0834396720": {"name": "นางกุสุมา อินตรา", "password": None},
                 "0851109039": {"name": "นางวรนุช กลัดสำเนียง", "password": None},
                 "0888888888": {"name": "ผู้ดูแลระบบ", "password": "admin"},
-                                
+                "0922849312": {"name": "นายชาคริต สุทธิผล", "password": None},
+                "0987654321": {"name": "ทดสอบ สุขใจ", "password": None},
+                "0811234567": {"name": "นายอภิชาติ พัฒนาสุข", "password": None}
             }
             with open("users_db.json", "w", encoding="utf-8") as f:
                 json.dump(initial_db, f, indent=4)
@@ -182,12 +184,12 @@ def display_login_page():
         with st.container(border=True):
             st.markdown("#### <div style='text-align: center;'>เข้าสู่ระบบ</div>", unsafe_allow_html=True)
             
-            phone = st.number_inputt_input(
+            phone = st.text_input(
                 "เบอร์โทรศัพท์",
                 placeholder="กรอกเบอร์โทรศัพท์ 10 หลัก",
                 max_chars=10
             )
-            password = st.number_inputt_input(
+            password = st.text_input(
                 "รหัสผ่าน",
                 type="password",
                 placeholder="กรอกรหัสผ่าน"
@@ -234,10 +236,10 @@ def display_password_page(mode="set"):
             st.info(f"สำหรับเบอร์โทรศัพท์: {st.session_state.phone}")
 
             if mode == "change":
-                current_password = st.number_inputt_input("รหัสผ่านปัจจุบัน", type="password")
+                current_password = st.text_input("รหัสผ่านปัจจุบัน", type="password")
             
-            new_password = st.number_inputinput("รหัสผ่านใหม่", type="password")
-            confirm_password = st.number_input_input("ยืนยันรหัสผ่านใหม่", type="password")
+            new_password = st.text_input("รหัสผ่านใหม่", type="password")
+            confirm_password = st.text_input("ยืนยันรหัสผ่านใหม่", type="password")
 
             if st.button("💾 บันทึก", use_container_width=True, type="primary"):
                 user_data = st.session_state.USERS_DB[st.session_state.phone]
