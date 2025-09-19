@@ -37,6 +37,12 @@ def thai_date(dt):
         return "N/A"
     return dt.strftime(f"%d/%m/{dt.year + 543}")
 
+def format_time(dt):
+    """แปลง datetime object เป็นสตริงเวลา (ชม.:นาที)"""
+    if pd.isna(dt):
+        return "N/A"
+    return dt.strftime("%H:%M")
+
 # -----------------------------
 # การจัดการข้อมูล
 # -----------------------------
@@ -48,6 +54,10 @@ def load_data(file_path="attendances.xlsx"):
             df = pd.read_excel(file_path, engine='openpyxl')
             if 'วันที่' in df.columns:
                 df['วันที่'] = pd.to_datetime(df['วันที่'], errors='coerce')
+            if 'เข้างาน' in df.columns:
+                df['เข้างาน'] = pd.to_datetime(df['เข้างาน'], errors='coerce').dt.time
+            if 'ออกงาน' in df.columns:
+                df['ออกงาน'] = pd.to_datetime(df['ออกงาน'], errors='coerce').dt.time
             return df
         except Exception as e:
             st.error(f"เกิดข้อผิดพลาดในการอ่านไฟล์ Excel: {e}")
@@ -350,9 +360,11 @@ def display_dashboard():
         if not dates_df.empty:
             with st.expander(f"ดูวันที่ **{leave_type}** (รวม {total_days} วัน/ครั้ง)"):
                 for _, row in dates_df.sort_values(by="วันที่").iterrows():
-                    # ใช้ st.markdown และ CSS เพื่อควบคุมขนาดตัวอักษร
+                    # ใช้ .get() เพื่อป้องกัน Key Error ถ้าคอลัมน์ไม่มีอยู่
+                    check_in_time = format_time(row.get('เข้างาน')) if 'เข้างาน' in row and pd.notna(row.get('เข้างาน')) else "N/A"
+                    check_out_time = format_time(row.get('ออกงาน')) if 'ออกงาน' in row and pd.notna(row.get('ออกงาน')) else "N/A"
                     st.markdown(
-                        f'<p style="font-size: 0.9rem; margin: 0;">- <b>{thai_date(row["วันที่"])}</b>: {row["ข้อยกเว้น"]}</p>',
+                        f'<p style="font-size: 0.9rem; margin: 0;">- <b>{thai_date(row["วันที่"])}</b>: เข้างาน {check_in_time} ออกงาน {check_out_time} ({row["ข้อยกเว้น"]})</p>',
                         unsafe_allow_html=True
                     )
     
