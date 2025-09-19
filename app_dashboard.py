@@ -32,6 +32,8 @@ bangkok_tz = pytz.timezone("Asia/Bangkok")
 
 def thai_date(dt):
     """แปลง datetime object เป็นสตริงวันที่ไทย (พ.ศ.)"""
+    if pd.isna(dt):
+        return "N/A"
     return dt.strftime(f"%d/%m/{dt.year + 543}")
 
 # -----------------------------
@@ -41,13 +43,24 @@ def thai_date(dt):
 def load_data(file_path="attendances.xlsx"):
     """โหลดข้อมูลจากไฟล์ Excel และคืนค่าเป็น DataFrame"""
     if file_path and os.path.exists(file_path):
-        return pd.read_excel(file_path, engine='openpyxl')
+        try:
+            df = pd.read_excel(file_path, engine='openpyxl')
+            # ตรวจสอบและแปลงคอลัมน์ 'วันที่' ให้เป็น datetime ทันที
+            if 'วันที่' in df.columns:
+                df['วันที่'] = pd.to_datetime(df['วันที่'], errors='coerce')
+            return df
+        except Exception as e:
+            st.error(f"เกิดข้อผิดพลาดในการอ่านไฟล์ Excel: {e}")
+            return pd.DataFrame()
     else:
         st.warning("❌ ไม่พบไฟล์ Excel: attendances.xlsx")
         return pd.DataFrame()
 
 def process_user_data(df, user_name):
     """ประมวลผลข้อมูลสำหรับผู้ใช้ที่ระบุ"""
+    if df.empty or "ชื่อ-สกุล" not in df.columns:
+        return pd.DataFrame(), pd.DataFrame()
+
     df_user = df[df["ชื่อ-สกุล"] == user_name].copy()
     if df_user.empty:
         return pd.DataFrame(), pd.DataFrame()
@@ -58,8 +71,7 @@ def process_user_data(df, user_name):
             df_user[col] = df_user[col].astype(str).str.strip().str.replace(r"\s+", " ", regex=True)
     if "แผนก" in df_user.columns:
         df_user["แผนก"] = df_user["แผนก"].replace({"nan": "ไม่ระบุ", "": "ไม่ระบุ"})
-    if "วันที่" in df_user.columns:
-        df_user["วันที่"] = pd.to_datetime(df_user["วันที่"], errors='coerce')
+    # คอลัมน์วันที่ถูกแปลงแล้วในฟังก์ชัน load_data
 
     # --- คำนวณประเภทการลา ---
     def leave_days(exception_text):
@@ -161,12 +173,23 @@ def display_dashboard():
         st.info("แดชบอร์ดนี้แสดงข้อมูลการเข้า-ออกงานส่วนบุคคล")
 
     # --- Main Content ---
-    # --- ส่วนหัว (Header) แบบปกติ ---
+    # --- ส่วนหัว (Header) ---
     st.title(f"📊 แดชบอร์ดสรุปข้อมูล")
     st.caption(f"ข้อมูลของคุณ: **{st.session_state.user}**")
+    
+    df_full = load_data()
+
+    # --- ส่วนเพิ่มเติม: แสดงช่วงวันที่ของข้อมูล ---
+    if not df_full.empty and 'วันที่' in df_full.columns:
+        # ลบแถวที่วันที่เป็นค่าว่างเพื่อให้คำนวณได้ถูกต้อง
+        df_full_cleaned = df_full.dropna(subset=['วันที่'])
+        if not df_full_cleaned.empty:
+            start_date = df_full_cleaned['วันที่'].min()
+            end_date = df_full_cleaned['วันที่'].max()
+            st.caption(f"ข้อมูลระหว่างวันที่: **{thai_date(start_date)}** ถึง **{thai_date(end_date)}**")
+    
     st.divider()
 
-    df_full = load_data()
     df_user, summary = process_user_data(df_full, st.session_state.user)
 
     if summary.empty:
@@ -228,7 +251,8 @@ def display_dashboard():
 
         if not dates_df.empty:
             with st.expander(f"ดูวันที่ **{leave_type}** (รวม {total_days} วัน/ครั้ง)"):
-                for _, row in dates_df.iterrows():
+                # เรียงลำดับวันที่ก่อนแสดงผล
+                for _, row in dates_df.sort_values(by="วันที่").iterrows():
                     st.markdown(f"- **{thai_date(row['วันที่'])}**: {row['ข้อยกเว้น']}")
     
     # --- ส่วนท้าย (Footer) สำหรับปุ่มออกจากระบบ ---
