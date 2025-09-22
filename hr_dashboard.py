@@ -87,19 +87,17 @@ def format_time(dt):
 # Data Handling
 # -----------------------------
 @st.cache_data
-def load_data(file_content):
+def load_data(uploaded_file):
     """Loads data from an Excel or CSV file content and returns a DataFrame."""
     try:
-        # Save the uploaded file to a temporary location
-        with open("uploaded_temp_file", "wb") as f:
-            f.write(file_content.getbuffer())
-        
-        file_extension = os.path.splitext("uploaded_temp_file")[1].lower()
+        file_extension = os.path.splitext(uploaded_file.name)[1].lower()
         
         if file_extension in ['.xlsx', '.xls']:
-            df = pd.read_excel("uploaded_temp_file", engine='openpyxl')
+            # Read from the file-like object directly
+            df = pd.read_excel(uploaded_file, engine='openpyxl')
         elif file_extension == '.csv':
-            df = pd.read_csv("uploaded_temp_file")
+            # Read from the file-like object directly
+            df = pd.read_csv(uploaded_file)
         else:
             st.error(f"ไม่รองรับไฟล์ประเภทนี้: {file_extension}")
             return pd.DataFrame()
