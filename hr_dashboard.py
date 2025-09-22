@@ -8,6 +8,7 @@ import json
 import firebase_admin
 from firebase_admin import credentials, firestore
 import bcrypt
+import uuid
 
 # -----------------------------
 # Page Setup and Styling
@@ -122,8 +123,6 @@ def process_user_data(df, user_name):
 # -----------------------------
 # Firebase Integration
 # -----------------------------
-
-# Initialize Firebase (run only once)
 if not firebase_admin._apps:
     try:
         service_account_info = st.secrets["firebase"]
@@ -135,9 +134,8 @@ if not firebase_admin._apps:
         st.info("กรุณาตรวจสอบว่าคุณได้ตั้งค่า `secrets` บน Streamlit Cloud อย่างถูกต้อง")
         st.stop()
 
-@st.cache_data(ttl=600) # Cache the data for 10 minutes
+@st.cache_data(ttl=600)
 def load_user_db():
-    """Loads the user database from Firestore."""
     try:
         db = firestore.client()
         users_ref = db.collection("users")
@@ -148,42 +146,72 @@ def load_user_db():
         return {}
 
 def save_user_db(phone, user_data):
-    """Saves a single user's data to Firestore for improved efficiency."""
     try:
         db = firestore.client()
         db.collection("users").document(phone).set(user_data)
-        st.cache_data.clear() # Clear cache to force reload on next run
+        st.cache_data.clear()
     except Exception as e:
         st.error(f"Error saving user data to Firestore: {e}")
 
+def create_session(user_phone):
+    """Creates a new session in Firestore."""
+    db = firestore.client()
+    session_id = str(uuid.uuid4())
+    session_ref = db.collection("sessions").document(session_id)
+    session_ref.set({
+        "user_phone": user_phone,
+        "created_at": firestore.SERVER_TIMESTAMP
+    })
+    st.session_state.session_id = session_id
+
+def delete_session():
+    """Deletes the current session from Firestore."""
+    if "session_id" in st.session_state:
+        db = firestore.client()
+        db.collection("sessions").document(st.session_state.session_id).delete()
+        del st.session_state.session_id
+
 def logout():
     """Clears the session state and returns to the login page."""
-    # Delete all keys from session state
+    delete_session()
     for key in list(st.session_state.keys()):
         del st.session_state[key]
     st.rerun()
 
+def check_session():
+    """Checks for a valid session in Firestore."""
+    if "session_id" in st.session_state:
+        db = firestore.client()
+        session_ref = db.collection("sessions").document(st.session_state.session_id)
+        session_doc = session_ref.get()
+        if session_doc.exists:
+            user_phone = session_doc.to_dict()["user_phone"]
+            USERS_DB = load_user_db()
+            if user_phone in USERS_DB:
+                st.session_state.user = USERS_DB[user_phone]["name"]
+                st.session_state.phone = user_phone
+                st.session_state.step = "dashboard"
+                return True
+    return False
+
 # -----------------------------
 # UI Display Functions
 # -----------------------------
-
 def display_login_page():
     """Displays the login form."""
     USERS_DB = load_user_db()
     st.title("📊 HR Dashboard")
     st.markdown("กรุณาเข้าสู่ระบบเพื่อดูข้อมูลการเข้า-ออกงานของคุณ")
-
     col1, col2, col3 = st.columns([1, 1.5, 1])
 
     with col2:
         with st.container(border=True):
             st.markdown("#### <div style='text-align: center;'>เข้าสู่ระบบ</div>", unsafe_allow_html=True)
-            
             phone = st.text_input(
                 "เบอร์โทรศัพท์",
                 placeholder="กรอกเบอร์โทรศัพท์ 10 หลัก",
                 max_chars=10,
-                value=st.session_state.get("phone", "") # Keep phone number in the input field
+                value=st.session_state.get("phone", "")
             )
             password = st.text_input(
                 "รหัสผ่าน",
@@ -201,6 +229,7 @@ def display_login_page():
                     elif user_data.get("password") and bcrypt.checkpw(password.encode('utf-8'), user_data.get("password").encode('utf-8')):
                         st.session_state.user = user_data["name"]
                         st.session_state.phone = phone
+                        create_session(phone) # Create and save session
                         st.session_state.step = "dashboard"
                         st.success("เข้าสู่ระบบสำเร็จ!")
                         st.rerun()
@@ -236,7 +265,6 @@ def display_password_page(mode="set"):
             if st.button("💾 บันทึก", use_container_width=True, type="primary"):
                 user_data = USERS_DB[st.session_state.phone]
                 
-                # Check current password only in change mode
                 if mode == "change" and not bcrypt.checkpw(current_password.encode('utf-8'), user_data.get("password", "").encode('utf-8')):
                     st.error("รหัสผ่านปัจจุบันไม่ถูกต้อง")
                 elif not new_password:
@@ -244,14 +272,13 @@ def display_password_page(mode="set"):
                 elif new_password != confirm_password:
                     st.error("รหัสผ่านใหม่และการยืนยันไม่ตรงกัน")
                 else:
-                    # Hash the new password before saving
                     hashed_password = bcrypt.hashpw(new_password.encode('utf-8'), bcrypt.gensalt()).decode('utf-8')
                     user_data["password"] = hashed_password
                     save_user_db(st.session_state.phone, user_data)
                     st.success("บันทึกรหัสผ่านใหม่เรียบร้อยแล้ว!")
                     if mode == "change":
                         st.session_state.step = "dashboard"
-                    else: # mode == "set"
+                    else:
                         st.session_state.step = "login"
                     st.rerun()
                 
@@ -274,7 +301,6 @@ def display_forgot_password_page():
     with col2:
         with st.container(border=True):
             st.markdown("#### <div style='text-align: center;'>รีเซ็ตรหัสผ่าน</div>", unsafe_allow_html=True)
-            
             user_phone = st.text_input(
                 "เบอร์โทรศัพท์พนักงานที่ลืมรหัส", 
                 placeholder="กรอกเบอร์โทรศัพท์ 10 หลัก", 
@@ -316,7 +342,6 @@ def display_forgot_password_page():
         st.session_state.step = "login"
         st.rerun()
 
-
 def display_dashboard():
     """Displays the user's dashboard."""
     
@@ -329,7 +354,6 @@ def display_dashboard():
             st.rerun()
         
         st.divider()
-        # The sidebar logout button is still here for desktop
         st.button("🚪 ออกจากระบบ", on_click=logout, use_container_width=True)
 
     st.header("📊 แดชบอร์ดสรุปข้อมูล")
@@ -399,12 +423,10 @@ def display_dashboard():
                     check_in_time = format_time(row.get('เข้างาน'))
                     check_out_time = format_time(row.get('ออกงาน'))
                     time_display = f' <span style="white-space: nowrap;">{check_in_time}-{check_out_time}</span>'
-
                     st.markdown(
                         f'<p style="font-size: 0.9rem; margin: 0;">- <b>{thai_date(row["วันที่"])}</b>{time_display} ({row["ข้อยกเว้น"]})</p>',
                         unsafe_allow_html=True
                     )
-
     st.divider()
     col1, col2, col3 = st.columns([1, 2, 1])
     with col2:
@@ -413,13 +435,13 @@ def display_dashboard():
 # -----------------------------
 # Main App Logic
 # -----------------------------
-# Re-introduce proper session state initialization
 if "step" not in st.session_state:
     st.session_state.step = "login"
-    st.session_state.phone = ""
-    st.session_state.user = ""
 
-if st.session_state.step == "login":
+# Check if there's a valid session on every rerun
+if st.session_state.step == "login" and check_session():
+    pass # Session restored, UI will switch to dashboard
+elif st.session_state.step == "login":
     display_login_page()
 elif st.session_state.step == "set_password":
     display_password_page(mode="set")
