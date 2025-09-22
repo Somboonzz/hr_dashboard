@@ -4,5 +4,7 @@ altair
 pytz
 firebase-admin
 bcrypt
+streamlit
 streamlit-js-eval
+... (และไลบรารีอื่นๆ ที่คุณใช้)
 openpyxl
