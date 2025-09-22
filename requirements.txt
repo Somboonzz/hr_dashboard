@@ -4,5 +4,4 @@ altair
 pytz
 firebase-admin
 bcrypt
-streamlit-js-eval
 openpyxl
