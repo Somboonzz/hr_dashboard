@@ -4,11 +4,10 @@ import altair as alt
 import datetime
 import os
 import pytz
-import random
 import json
 
 # -----------------------------
-# การตั้งค่าหน้าเว็บและสไตล์
+# Page Setup and Styling
 # -----------------------------
 st.set_page_config(
     page_title="HR Dashboard",
@@ -16,7 +15,7 @@ st.set_page_config(
     layout="wide"
 )
 
-# ซ่อน UI เริ่มต้นของ Streamlit เพื่อให้ดูเป็นแอปฯ มากขึ้น
+# Hide default Streamlit UI
 hide_streamlit_style = """
             <style>
             #MainMenu {visibility: hidden;}
@@ -27,32 +26,32 @@ hide_streamlit_style = """
 st.markdown(hide_streamlit_style, unsafe_allow_html=True)
 
 # -----------------------------
-# โซนเวลาและฟังก์ชันเกี่ยวกับวันที่
+# Timezone and Date Functions
 # -----------------------------
 bangkok_tz = pytz.timezone("Asia/Bangkok")
 
 def thai_date(dt):
-    """แปลง datetime object เป็นสตริงวันที่ไทย (พ.ศ.)"""
+    """Converts a datetime object to a Thai date string (Buddhist year)."""
     if pd.isna(dt):
         return "N/A"
     return dt.strftime(f"%d/%m/{dt.year + 543}")
 
 def format_time(dt):
-    """แปลง datetime object เป็นสตริงเวลา (ชม.:นาที)"""
+    """Converts a datetime object to a time string (HH:MM)."""
     if pd.isna(dt) or (isinstance(dt, datetime.time) and dt == datetime.time(0, 0)):
         return "00:00"
     return dt.strftime("%H:%M")
 
 # -----------------------------
-# การจัดการข้อมูล
+# Data Handling
 # -----------------------------
 @st.cache_data
 def load_data(file_path="attendances.xlsx"):
-    """โหลดข้อมูลจากไฟล์ Excel หรือ CSV และคืนค่าเป็น DataFrame"""
+    """Loads data from an Excel or CSV file and returns a DataFrame."""
     file_extension = os.path.splitext(file_path)[1].lower()
     
     if not os.path.exists(file_path):
-        st.warning(f"❌ ไม่พบไฟล์ข้อมูล: {file_path}")
+        st.warning(f"❌ Data file not found: {file_path}")
         return pd.DataFrame()
 
     try:
@@ -61,9 +60,10 @@ def load_data(file_path="attendances.xlsx"):
         elif file_extension == '.csv':
             df = pd.read_csv(file_path)
         else:
-            st.error(f"รูปแบบไฟล์ไม่รองรับ: {file_extension}")
+            st.error(f"Unsupported file format: {file_extension}")
             return pd.DataFrame()
         
+        # Data cleaning and type conversion
         if 'วันที่' in df.columns:
             df['วันที่'] = pd.to_datetime(df['วันที่'], errors='coerce')
         if 'เข้างาน' in df.columns:
@@ -75,11 +75,11 @@ def load_data(file_path="attendances.xlsx"):
 
         return df
     except Exception as e:
-        st.error(f"เกิดข้อผิดพลาดในการอ่านไฟล์: {e}")
+        st.error(f"Error reading file: {e}")
         return pd.DataFrame()
 
 def process_user_data(df, user_name):
-    """ประมวลผลข้อมูลสำหรับผู้ใช้ที่ระบุ"""
+    """Processes attendance data for a specific user."""
     if df.empty or "ชื่อ-สกุล" not in df.columns:
         return pd.DataFrame(), pd.DataFrame()
 
@@ -87,12 +87,14 @@ def process_user_data(df, user_name):
     if df_user.empty:
         return pd.DataFrame(), pd.DataFrame()
 
+    # Clean up string columns
     for col in ["ชื่อ-สกุล", "แผนก", "ข้อยกเว้น"]:
         if col in df_user.columns:
             df_user[col] = df_user[col].astype(str).str.strip().str.replace(r"\s+", " ", regex=True)
     if "แผนก" in df_user.columns:
         df_user["แผนก"] = df_user["แผนก"].replace({"nan": "ไม่ระบุ", "": "ไม่ระบุ"})
     
+    # Calculate leave days
     def leave_days(exception_text):
         return 0.5 if "ครึ่งวัน" in str(exception_text) else 1
 
@@ -108,10 +110,10 @@ def process_user_data(df, user_name):
     return df_user, summary_df
 
 # -----------------------------
-# การจัดการ Session State และ Authentication
+# Session State and Authentication
 # -----------------------------
 def load_user_db():
-    """โหลดฐานข้อมูลผู้ใช้จากไฟล์ JSON ถ้ามี"""
+    """Loads the user database from a JSON file, or creates it if it doesn't exist."""
     try:
         if os.path.exists("users_db.json"):
             with open("users_db.json", "r", encoding="utf-8") as f:
@@ -126,9 +128,6 @@ def load_user_db():
                 "0834396720": {"name": "นางกุสุมา อินตรา", "password": None},
                 "0851109039": {"name": "นางวรนุช กลัดสำเนียง", "password": None},
                 "0888888888": {"name": "ผู้ดูแลระบบ", "password": "admin"},
-                "0922849312": {"name": "นายชาคริต สุทธิผล", "password": None},
-                "0987654321": {"name": "ทดสอบ สุขใจ", "password": None},
-                "0811234567": {"name": "นายอภิชาติ พัฒนาสุข", "password": None}
             }
             with open("users_db.json", "w", encoding="utf-8") as f:
                 json.dump(initial_db, f, indent=4)
@@ -138,38 +137,34 @@ def load_user_db():
         return {}
 
 def save_user_db():
-    """บันทึกฐานข้อมูลผู้ใช้ลงไฟล์ JSON"""
+    """Saves the current user database from session state to the JSON file."""
     try:
         with open("users_db.json", "w", encoding="utf-8") as f:
             json.dump(st.session_state.USERS_DB, f, indent=4)
     except Exception as e:
         st.error(f"Error saving user database: {e}")
 
+# Initialize session state
 if "step" not in st.session_state:
     st.session_state.step = "login"
     st.session_state.phone = ""
     st.session_state.user = ""
-    st.session_state.forgot_step = "input_phones"
-    st.session_state.temp_otp = ""
-    st.session_state.reset_phone = ""
     st.session_state.USERS_DB = load_user_db()
 
-
 def logout():
-    """เคลียร์ Session State และกลับไปหน้า Login"""
-    keys_to_reset = ["step", "phone", "user", "forgot_step", "temp_otp", "reset_phone"]
-    for key in keys_to_reset:
-        if key in st.session_state:
-            st.session_state[key] = ""
+    """Clears the session state and returns to the login page."""
+    for key in list(st.session_state.keys()):
+        if key != 'USERS_DB': # Keep the loaded DB in memory
+             del st.session_state[key]
     st.session_state.step = "login"
     st.rerun()
 
 # -----------------------------
-# ส่วนแสดงผล (UI)
+# UI Display Functions
 # -----------------------------
 
 def display_login_page():
-    """แสดงฟอร์มสำหรับล็อกอินด้วยรหัสผ่าน"""
+    """Displays the login form."""
     st.title("📊 HR Dashboard")
     st.markdown("กรุณาเข้าสู่ระบบเพื่อดูข้อมูลการเข้า-ออกงานของคุณ")
 
@@ -179,7 +174,6 @@ def display_login_page():
         with st.container(border=True):
             st.markdown("#### <div style='text-align: center;'>เข้าสู่ระบบ</div>", unsafe_allow_html=True)
             
-            # แก้ไข: ลบพารามิเตอร์ unsafe_allow_html
             phone = st.text_input(
                 "เบอร์โทรศัพท์",
                 placeholder="กรอกเบอร์โทรศัพท์ 10 หลัก",
@@ -208,18 +202,14 @@ def display_login_page():
                 else:
                     st.error("ไม่พบเบอร์โทรศัพท์นี้ในระบบ")
 
-        st.markdown("---")
-        if st.button("🔒 ลืมรหัสผ่าน", use_container_width=True):
-            st.session_state.step = "forgot_password"
-            st.session_state.forgot_step = "input_phones"
-            st.rerun()
-            
+            st.markdown("---")
+            if st.button("🔒 ลืมรหัสผ่าน", use_container_width=True):
+                st.session_state.step = "forgot_password"
+                st.rerun()
+                
 def display_password_page(mode="set"):
-    """แสดงหน้าสำหรับตั้งค่าหรือเปลี่ยนรหัสผ่าน"""
-    title_map = {
-        "set": "ตั้งรหัสผ่านครั้งแรก",
-        "change": "เปลี่ยนรหัสผ่าน",
-    }
+    """Displays the page for setting or changing a password."""
+    title_map = {"set": "ตั้งรหัสผ่านครั้งแรก", "change": "เปลี่ยนรหัสผ่าน"}
     title = title_map.get(mode, "จัดการรหัสผ่าน")
     st.title(f"🔑 {title}")
 
@@ -247,13 +237,12 @@ def display_password_page(mode="set"):
                 else:
                     st.session_state.USERS_DB[st.session_state.phone]["password"] = new_password
                     save_user_db()
+                    st.success("บันทึกรหัสผ่านใหม่เรียบร้อยแล้ว!")
                     if mode == "change":
-                        st.success("บันทึกรหัสผ่านใหม่เรียบร้อยแล้ว!")
                         st.session_state.step = "dashboard"
-                        st.rerun()
-                    else:
-                        st.success("ตั้งรหัสผ่านใหม่สำเร็จ! กรุณาล็อกอินอีกครั้ง")
-                        logout()
+                    else: # mode == "set"
+                        st.session_state.step = "login" # Go back to login
+                    st.rerun()
             
             if mode == "set":
                 if st.button("⬅️ กลับไปหน้าล็อกอิน", use_container_width=True):
@@ -264,7 +253,7 @@ def display_password_page(mode="set"):
                     st.rerun()
 
 def display_forgot_password_page():
-    """แสดงหน้าสำหรับลืมรหัสผ่านพร้อมการยืนยันจาก Admin"""
+    """Displays the page for password reset with admin verification."""
     st.title("🔒 ลืมรหัสผ่าน")
     st.markdown("กรุณาให้ผู้ดูแลระบบช่วยเหลือในการรีเซ็ตรหัสผ่าน")
 
@@ -273,20 +262,15 @@ def display_forgot_password_page():
         with st.container(border=True):
             st.markdown("#### <div style='text-align: center;'>รีเซ็ตรหัสผ่าน</div>", unsafe_allow_html=True)
             
-            # แก้ไข: ลบพารามิเตอร์ unsafe_allow_html
             user_phone = st.text_input(
                 "เบอร์โทรศัพท์พนักงานที่ลืมรหัส", 
                 placeholder="กรอกเบอร์โทรศัพท์ 10 หลัก", 
-                max_chars=10, 
-                key="forgot_user_phone"
+                max_chars=10
             )
-            # แก้ไข: ลบพารามิเตอร์ unsafe_allow_html
             admin_phone = st.text_input(
                 "เบอร์โทรศัพท์ผู้ดูแลระบบ", 
                 placeholder="กรอกเบอร์โทรศัพท์ผู้ดูแลระบบ", 
-                max_chars=10, 
-                type="password", 
-                key="forgot_admin_phone"
+                max_chars=10
             )
             new_password = st.text_input("รหัสผ่านใหม่", type="password", key="new_password")
             confirm_password = st.text_input("ยืนยันรหัสผ่านใหม่", type="password", key="confirm_new_password")
@@ -294,22 +278,23 @@ def display_forgot_password_page():
             if st.button("💾 บันทึกรหัสผ่านใหม่", use_container_width=True, type="primary"):
                 if user_phone not in st.session_state.USERS_DB or st.session_state.USERS_DB[user_phone]["name"] == "ผู้ดูแลระบบ":
                     st.error("ไม่พบเบอร์โทรศัพท์พนักงานนี้ในระบบ")
-                elif admin_phone != "0888888888":
+                elif admin_phone != "0888888888": # Assuming admin phone is the key, not password
                     st.error("เบอร์โทรศัพท์ผู้ดูแลระบบไม่ถูกต้อง")
-                elif new_password != confirm_password or not new_password:
+                elif not new_password or new_password != confirm_password:
                     st.error("รหัสผ่านใหม่และการยืนยันไม่ตรงกัน หรือเป็นค่าว่าง")
                 else:
                     st.session_state.USERS_DB[user_phone]["password"] = new_password
                     save_user_db()
                     st.success("ตั้งรหัสผ่านใหม่สำเร็จแล้ว! กรุณากลับไปหน้าล็อกอิน")
-                    logout()
+                    st.session_state.step = "login"
+                    st.rerun()
 
-        if st.button("⬅️ กลับไปหน้าล็อกอิน", use_container_width=True):
-            logout()
+    if st.button("⬅️ กลับไปหน้าล็อกอิน", use_container_width=True):
+        logout()
 
 
 def display_dashboard():
-    """แสดง Dashboard ของผู้ใช้"""
+    """Displays the user's dashboard."""
     with st.sidebar:
         st.header("เมนู")
         st.info(f"ยินดีต้อนรับ,\n**{st.session_state.user}**")
@@ -322,7 +307,7 @@ def display_dashboard():
         st.button("🚪 ออกจากระบบ", on_click=logout, use_container_width=True)
 
     st.header("📊 แดชบอร์ดสรุปข้อมูล")
-    st.subheader(f" **{st.session_state.user}**")
+    st.subheader(f"**{st.session_state.user}**")
 
     df_full = load_data()
 
@@ -362,11 +347,11 @@ def display_dashboard():
         x=alt.X('จำนวนวัน/ครั้ง:Q', title='จำนวน (วัน/ครั้ง)'),
         y=alt.Y('ประเภท:N', title='ประเภท', sort='-x'),
         color=alt.Color('ประเภท:N', 
-                         scale=alt.Scale(
-                             domain=['ลาป่วย/ลากิจ', 'ขาด', 'สาย', 'พักผ่อน'],
-                             range=['#FFC300', '#C70039', '#FF5733', '#33C1FF']
-                         ),
-                         legend=None),
+                        scale=alt.Scale(
+                            domain=['ลาป่วย/ลากิจ', 'ขาด', 'สาย', 'พักผ่อน'],
+                            range=['#FFC300', '#C70039', '#FF5733', '#33C1FF']
+                        ),
+                        legend=None),
         tooltip=['ประเภท', 'จำนวนวัน/ครั้ง']
     ).properties(title='กราฟเปรียบเทียบข้อมูล')
     st.altair_chart(chart, use_container_width=True)
@@ -387,18 +372,12 @@ def display_dashboard():
                 for _, row in dates_df.sort_values(by="วันที่").iterrows():
                     check_in_time = format_time(row.get('เข้างาน'))
                     check_out_time = format_time(row.get('ออกงาน'))
-                    
                     time_display = f' <span style="white-space: nowrap;">{check_in_time}-{check_out_time}</span>'
 
                     st.markdown(
                         f'<p style="font-size: 0.9rem; margin: 0;">- <b>{thai_date(row["วันที่"])}</b>{time_display} ({row["ข้อยกเว้น"]})</p>',
                         unsafe_allow_html=True
                     )
-    
-    st.divider()
-    _ , btn_col, _ = st.columns([1, 0.5, 1])
-    with btn_col:
-        st.button("🚪 ออกจากระบบ", on_click=logout, use_container_width=True)
 
 # -----------------------------
 # Main App Logic
@@ -411,5 +390,7 @@ elif st.session_state.step == "change_password":
     display_password_page(mode="change")
 elif st.session_state.step == "forgot_password":
     display_forgot_password_page()
-else:
+elif st.session_state.step == "dashboard":
     display_dashboard()
+else:
+    display_login_page() # Default to login page if state is unknown
