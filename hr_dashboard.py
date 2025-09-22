@@ -4,7 +4,9 @@ import altair as alt
 import datetime
 import os
 import pytz
-import json
+import json # ยังคงเก็บไว้เผื่อใช้ json.dump() หรือ json.load() ในกรณีอื่น
+import firebase_admin
+from firebase_admin import credentials, firestore
 
 # -----------------------------
 # Page Setup and Styling
@@ -27,6 +29,7 @@ st.markdown(hide_streamlit_style, unsafe_allow_html=True)
 
 # -----------------------------
 # Timezone and Date Functions
+# (ไม่มีการเปลี่ยนแปลงในส่วนนี้)
 # -----------------------------
 bangkok_tz = pytz.timezone("Asia/Bangkok")
 
@@ -43,7 +46,7 @@ def format_time(dt):
     return dt.strftime("%H:%M")
 
 # -----------------------------
-# Data Handling
+# Data Handling (load_data และ process_user_data ไม่มีเปลี่ยนแปลง)
 # -----------------------------
 @st.cache_data
 def load_data(file_path="attendances.xlsx"):
@@ -110,57 +113,61 @@ def process_user_data(df, user_name):
     return df_user, summary_df
 
 # -----------------------------
-# Session State and Authentication
+# Firebase Integration
 # -----------------------------
+
+# Initialize Firebase (run only once)
+# ตรวจสอบว่ายังไม่ได้ initialize เพื่อป้องกัน error หากมีการ rerun
+if not firebase_admin._apps:
+    # ระบุ Path ไปยังไฟล์ Service Account Key ของคุณ
+    # เช่น "my-hr-dashboard-firebase-adminsdk-xxxxx-xxxxxxxxxx.json"
+    cred = credentials.Certificate("firestore-key.json") # <<<-- แก้ไขที่นี่
+    firebase_admin.initialize_app(cred)
+
+# แทนที่ฟังก์ชัน load_user_db() เดิม
 def load_user_db():
-    """Loads the user database from a JSON file, or creates it if it doesn't exist."""
+    """Loads the user database from Firestore."""
     try:
-        if os.path.exists("users_db.json"):
-            with open("users_db.json", "r", encoding="utf-8") as f:
-                return json.load(f)
-        else:
-            initial_db = {
-                "0989620358": {"name": "นายสมบูรณ์ เหนือกอง", "password": None},
-                "0951646928": {"name": "นางสาวพรทิพย์ สุขอนันต์", "password": None},
-                "0618741894": {"name": "นายอมร เพ็งโสภา", "password": None},
-                "0918802121": {"name": "นางนิภาพร ไพโรจน์ฤทธิ์กุล", "password": None},
-                "0830152213": {"name": "นางสาวปวีณา เนตรทิพย์", "password": None},
-                "0834396720": {"name": "นางกุสุมา อินตรา", "password": None},
-                "0851109039": {"name": "นางวรนุช กลัดสำเนียง", "password": None},
-                "0888888888": {"name": "ผู้ดูแลระบบ", "password": "admin"},
-            }
-            with open("users_db.json", "w", encoding="utf-8") as f:
-                json.dump(initial_db, f, indent=4)
-            return initial_db
+        db = firestore.client()
+        users_ref = db.collection("users") # อ้างอิง Collection ชื่อ 'users'
+        users_dict = {}
+        for doc in users_ref.stream():
+            users_dict[doc.id] = doc.to_dict()
+        return users_dict
     except Exception as e:
-        st.error(f"Error loading user database: {e}")
+        st.error(f"Error loading user database from Firestore: {e}")
         return {}
 
+# แทนที่ฟังก์ชัน save_user_db() เดิม
 def save_user_db():
-    """Saves the current user database from session state to the JSON file."""
+    """Saves the current user database from session state to Firestore."""
     try:
-        with open("users_db.json", "w", encoding="utf-8") as f:
-            json.dump(st.session_state.USERS_DB, f, indent=4)
+        db = firestore.client()
+        for phone, data in st.session_state.USERS_DB.items():
+            # ใช้ Document ID เป็นเบอร์โทรศัพท์ และบันทึกข้อมูล
+            db.collection("users").document(phone).set(data)
+        # st.success("User database saved to Firestore.") # อาจจะคอมเมนต์บรรทัดนี้ใน Production เพื่อไม่ให้ User เห็น
     except Exception as e:
-        st.error(f"Error saving user database: {e}")
+        st.error(f"Error saving user database to Firestore: {e}")
 
 # Initialize session state
 if "step" not in st.session_state:
     st.session_state.step = "login"
     st.session_state.phone = ""
     st.session_state.user = ""
-    st.session_state.USERS_DB = load_user_db()
+    st.session_state.USERS_DB = load_user_db() # โหลดข้อมูลจาก Firestore ตอนเริ่มต้น
 
 def logout():
     """Clears the session state and returns to the login page."""
     for key in list(st.session_state.keys()):
         if key != 'USERS_DB': # Keep the loaded DB in memory
-             del st.session_state[key]
+            del st.session_state[key]
     st.session_state.step = "login"
     st.rerun()
 
 # -----------------------------
 # UI Display Functions
+# (ไม่มีการเปลี่ยนแปลงในส่วนนี้)
 # -----------------------------
 
 def display_login_page():
@@ -243,7 +250,7 @@ def display_password_page(mode="set"):
                     else: # mode == "set"
                         st.session_state.step = "login" # Go back to login
                     st.rerun()
-            
+                
             if mode == "set":
                 if st.button("⬅️ กลับไปหน้าล็อกอิน", use_container_width=True):
                     logout()
@@ -276,10 +283,12 @@ def display_forgot_password_page():
             confirm_password = st.text_input("ยืนยันรหัสผ่านใหม่", type="password", key="confirm_new_password")
 
             if st.button("💾 บันทึกรหัสผ่านใหม่", use_container_width=True, type="primary"):
-                if user_phone not in st.session_state.USERS_DB or st.session_state.USERS_DB[user_phone]["name"] == "ผู้ดูแลระบบ":
+                # ใน Firebase, "0888888888" ต้องมี Document ใน Collection 'users'
+                # และมี field 'password' เป็น 'admin' ด้วย
+                if user_phone not in st.session_state.USERS_DB or (user_phone == "0888888888" and st.session_state.USERS_DB[user_phone]["name"] != "ผู้ดูแลระบบ"):
                     st.error("ไม่พบเบอร์โทรศัพท์พนักงานนี้ในระบบ")
-                elif admin_phone != "0888888888": # Assuming admin phone is the key, not password
-                    st.error("เบอร์โทรศัพท์ผู้ดูแลระบบไม่ถูกต้อง")
+                elif admin_phone not in st.session_state.USERS_DB or st.session_state.USERS_DB[admin_phone].get("password") != "admin": # ตรวจสอบ password ของ admin
+                    st.error("เบอร์โทรศัพท์ผู้ดูแลระบบหรือรหัสผ่านไม่ถูกต้อง")
                 elif not new_password or new_password != confirm_password:
                     st.error("รหัสผ่านใหม่และการยืนยันไม่ตรงกัน หรือเป็นค่าว่าง")
                 else:
@@ -347,11 +356,11 @@ def display_dashboard():
         x=alt.X('จำนวนวัน/ครั้ง:Q', title='จำนวน (วัน/ครั้ง)'),
         y=alt.Y('ประเภท:N', title='ประเภท', sort='-x'),
         color=alt.Color('ประเภท:N', 
-                        scale=alt.Scale(
-                            domain=['ลาป่วย/ลากิจ', 'ขาด', 'สาย', 'พักผ่อน'],
-                            range=['#FFC300', '#C70039', '#FF5733', '#33C1FF']
-                        ),
-                        legend=None),
+                                 scale=alt.Scale(
+                                     domain=['ลาป่วย/ลากิจ', 'ขาด', 'สาย', 'พักผ่อน'],
+                                     range=['#FFC300', '#C70039', '#FF5733', '#33C1FF']
+                                 ),
+                                 legend=None),
         tooltip=['ประเภท', 'จำนวนวัน/ครั้ง']
     ).properties(title='กราฟเปรียบเทียบข้อมูล')
     st.altair_chart(chart, use_container_width=True)
