@@ -126,14 +126,8 @@ def process_user_data(df, user_name):
 # Initialize Firebase (run only once)
 if not firebase_admin._apps:
     try:
-        # Load the secrets object from Streamlit
         service_account_info = st.secrets["firebase"]
-        
-        # Convert the Streamlit object to a standard Python dictionary
-        # This is a robust way to handle the object from st.secrets
         firebase_config_dict = dict(service_account_info)
-        
-        # Now pass the standard dictionary to credentials.Certificate
         cred = credentials.Certificate(firebase_config_dict)
         firebase_admin.initialize_app(cred)
     except Exception as e:
@@ -141,14 +135,13 @@ if not firebase_admin._apps:
         st.info("กรุณาตรวจสอบว่าคุณได้ตั้งค่า `secrets` บน Streamlit Cloud อย่างถูกต้อง")
         st.stop()
 
+@st.cache_data(ttl=600) # Cache the data for 10 minutes
 def load_user_db():
     """Loads the user database from Firestore."""
     try:
         db = firestore.client()
         users_ref = db.collection("users")
-        users_dict = {}
-        for doc in users_ref.stream():
-            users_dict[doc.id] = doc.to_dict()
+        users_dict = {doc.id: doc.to_dict() for doc in users_ref.stream()}
         return users_dict
     except Exception as e:
         st.error(f"Error loading user database from Firestore: {e}")
@@ -159,20 +152,14 @@ def save_user_db(phone, user_data):
     try:
         db = firestore.client()
         db.collection("users").document(phone).set(user_data)
+        st.cache_data.clear() # Clear cache to force reload on next run
     except Exception as e:
         st.error(f"Error saving user data to Firestore: {e}")
-
-# Initialize session state
-if "step" not in st.session_state:
-    st.session_state.step = "login"
-    st.session_state.phone = ""
-    st.session_state.user = ""
 
 def logout():
     """Clears the session state and returns to the login page."""
     for key in list(st.session_state.keys()):
-        if key not in ['firebase_config_dict']:
-            del st.session_state[key]
+        del st.session_state[key]
     st.session_state.step = "login"
     st.rerun()
 
@@ -212,7 +199,7 @@ def display_login_page():
                         st.session_state.step = "set_password"
                         st.rerun()
                     # Now it's safe to check the password with bcrypt
-                    elif bcrypt.checkpw(password.encode('utf-8'), user_data.get("password").encode('utf-8')):
+                    elif user_data.get("password") and bcrypt.checkpw(password.encode('utf-8'), user_data.get("password").encode('utf-8')):
                         st.session_state.user = user_data["name"]
                         st.session_state.phone = phone
                         st.session_state.step = "dashboard"
@@ -250,7 +237,7 @@ def display_password_page(mode="set"):
                 user_data = USERS_DB[st.session_state.phone]
                 
                 # Check current password only in change mode
-                if mode == "change" and not bcrypt.checkpw(current_password.encode('utf-8'), user_data.get("password").encode('utf-8')):
+                if mode == "change" and not bcrypt.checkpw(current_password.encode('utf-8'), user_data.get("password", "").encode('utf-8')):
                     st.error("รหัสผ่านปัจจุบันไม่ถูกต้อง")
                 elif not new_password:
                     st.error("รหัสผ่านใหม่ต้องไม่เป็นค่าว่าง")
@@ -421,6 +408,16 @@ def display_dashboard():
 # -----------------------------
 # Main App Logic
 # -----------------------------
+if "is_authenticated" not in st.session_state:
+    st.session_state.is_authenticated = False
+
+if st.session_state.is_authenticated:
+    st.session_state.step = "dashboard"
+else:
+    # Check if a user is logging in
+    if st.session_state.step == "dashboard":
+        st.session_state.is_authenticated = True
+
 if st.session_state.step == "login":
     display_login_page()
 elif st.session_state.step == "set_password":
