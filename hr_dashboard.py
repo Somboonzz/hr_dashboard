@@ -417,3 +417,19 @@ def display_dashboard():
                         f'<p style="font-size: 0.9rem; margin: 0;">- <b>{thai_date(row["วันที่"])}</b>{time_display} ({row["ข้อยกเว้น"]})</p>',
                         unsafe_allow_html=True
                     )
+
+# -----------------------------
+# Main App Logic
+# -----------------------------
+if st.session_state.step == "login":
+    display_login_page()
+elif st.session_state.step == "set_password":
+    display_password_page(mode="set")
+elif st.session_state.step == "change_password":
+    display_password_page(mode="change")
+elif st.session_state.step == "forgot_password":
+    display_forgot_password_page()
+elif st.session_state.step == "dashboard":
+    display_dashboard()
+else:
+    display_login_page()
