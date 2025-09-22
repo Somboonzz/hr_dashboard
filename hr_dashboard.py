@@ -5,11 +5,11 @@ import datetime
 import os
 import pytz
 import json
-import firebase_admin
-from firebase_admin import credentials, firestore
 import bcrypt
 import uuid
 from streamlit_js_eval import get_session_storage_value, set_session_storage_value
+import firebase_admin
+from firebase_admin import credentials, firestore
 
 # -----------------------------
 # Page Setup and Styling
@@ -20,15 +20,47 @@ st.set_page_config(
     layout="wide"
 )
 
-# Hide default Streamlit UI
-hide_streamlit_style = """
-            <style>
-            #MainMenu {visibility: hidden;}
-            footer {visibility: hidden;}
-            header {visibility: hidden;}
-            </style>
-            """
-st.markdown(hide_streamlit_style, unsafe_allow_html=True)
+# Custom CSS for better styling
+st.markdown("""
+<style>
+    /* Hide default Streamlit UI */
+    #MainMenu, footer, header { visibility: hidden; }
+
+    /* General body styling */
+    body {
+        font-family: 'Inter', sans-serif;
+        background-color: #f0f2f6;
+    }
+    
+    /* Container styling */
+    .stContainer {
+        border-radius: 12px;
+        padding: 2rem;
+        box-shadow: 0 4px 6px rgba(0, 0, 0, 0.1);
+    }
+    
+    /* Buttons */
+    .stButton>button {
+        width: 100%;
+        border-radius: 8px;
+        border: 1px solid #ddd;
+        transition: all 0.3s ease-in-out;
+    }
+    .stButton>button:hover {
+        transform: translateY(-2px);
+        box-shadow: 0 4px 6px rgba(0, 0, 0, 0.1);
+    }
+
+    /* Expander styling */
+    .streamlit-expanderHeader {
+        background-color: #f8f9fa;
+        border-radius: 8px;
+        border: 1px solid #e9ecef;
+        padding: 0.5rem 1rem;
+        margin-bottom: 1rem;
+    }
+</style>
+""", unsafe_allow_html=True)
 
 # -----------------------------
 # Timezone and Date Functions
@@ -39,33 +71,38 @@ def thai_date(dt):
     """Converts a datetime object to a Thai date string (Buddhist year)."""
     if pd.isna(dt):
         return "N/A"
-    return dt.strftime(f"%d/%m/{dt.year + 543}")
+    # Ensure dt is a datetime object before converting
+    if isinstance(dt, pd.Timestamp):
+        return dt.strftime(f"%d/%m/{dt.year + 543}")
+    return dt
 
 def format_time(dt):
     """Converts a datetime object to a time string (HH:MM)."""
     if pd.isna(dt) or (isinstance(dt, datetime.time) and dt == datetime.time(0, 0)):
         return "00:00"
-    return dt.strftime("%H:%M")
+    if isinstance(dt, datetime.time):
+        return dt.strftime("%H:%M")
+    return dt
 
 # -----------------------------
 # Data Handling
 # -----------------------------
 @st.cache_data
-def load_data(file_path="attendances.xlsx"):
-    """Loads data from an Excel or CSV file and returns a DataFrame."""
-    file_extension = os.path.splitext(file_path)[1].lower()
-    
-    if not os.path.exists(file_path):
-        st.warning(f"❌ Data file not found: {file_path}")
-        return pd.DataFrame()
-
+def load_data(file_content):
+    """Loads data from an Excel or CSV file content and returns a DataFrame."""
     try:
+        # Save the uploaded file to a temporary location
+        with open("uploaded_temp_file", "wb") as f:
+            f.write(file_content.getbuffer())
+        
+        file_extension = os.path.splitext("uploaded_temp_file")[1].lower()
+        
         if file_extension in ['.xlsx', '.xls']:
-            df = pd.read_excel(file_path, engine='openpyxl')
+            df = pd.read_excel("uploaded_temp_file", engine='openpyxl')
         elif file_extension == '.csv':
-            df = pd.read_csv(file_path)
+            df = pd.read_csv("uploaded_temp_file")
         else:
-            st.error(f"Unsupported file format: {file_extension}")
+            st.error(f"ไม่รองรับไฟล์ประเภทนี้: {file_extension}")
             return pd.DataFrame()
         
         # Data cleaning and type conversion
@@ -77,10 +114,10 @@ def load_data(file_path="attendances.xlsx"):
         if 'ออกงาน' in df.columns:
             df['ออกงาน'] = df['ออกงาน'].replace('-', None)
             df['ออกงาน'] = pd.to_datetime(df['ออกงาน'], format='%H:%M:%S', errors='coerce').dt.time
-
+        
         return df
     except Exception as e:
-        st.error(f"Error reading file: {e}")
+        st.error(f"เกิดข้อผิดพลาดในการอ่านไฟล์: {e}")
         return pd.DataFrame()
 
 def process_user_data(df, user_name):
@@ -120,13 +157,18 @@ def process_user_data(df, user_name):
 # -----------------------------
 if not firebase_admin._apps:
     try:
-        service_account_info = st.secrets["firebase"]
-        firebase_config_dict = dict(service_account_info)
-        cred = credentials.Certificate(firebase_config_dict)
+        if "firebase" in st.secrets:
+            service_account_info = dict(st.secrets["firebase"])
+        else:
+            # Fallback for local development
+            with open("firebase_config.json") as f:
+                service_account_info = json.load(f)
+        
+        cred = credentials.Certificate(service_account_info)
         firebase_admin.initialize_app(cred)
     except Exception as e:
         st.error(f"เกิดข้อผิดพลาดในการเชื่อมต่อ Firebase: {e}")
-        st.info("กรุณาตรวจสอบว่าคุณได้ตั้งค่า `secrets` บน Streamlit Cloud อย่างถูกต้อง")
+        st.info("กรุณาตรวจสอบการตั้งค่า `secrets` หรือไฟล์ `firebase_config.json`")
         st.stop()
 
 @st.cache_data(ttl=600)
@@ -167,10 +209,10 @@ def delete_session(session_id):
 
 def logout():
     """Clears the session state and returns to the login page."""
-    delete_session(st.session_state.get("session_id"))
+    if st.session_state.get("session_id"):
+        delete_session(st.session_state.session_id)
     set_session_storage_value("session_id", None)
-    for key in list(st.session_state.keys()):
-        del st.session_state[key]
+    st.session_state.clear()
     st.rerun()
 
 def check_session(session_id):
@@ -190,25 +232,10 @@ def check_session(session_id):
     return None
 
 # -----------------------------
-# Main App Logic
+# App Pages
 # -----------------------------
-# --- Check for existing session at the start of every run ---
-session_id_from_local_storage = get_session_storage_value(key="session_id")
-if session_id_from_local_storage and "user" not in st.session_state:
-    user_data = check_session(session_id_from_local_storage)
-    if user_data:
-        st.session_state.user = user_data["name"]
-        st.session_state.phone = user_data["phone"]
-        st.session_state.session_id = session_id_from_local_storage
-        st.session_state.step = "dashboard"
-    else:
-        # Session in local storage is invalid, clear it
-        set_session_storage_value("session_id", None)
-
-if "step" not in st.session_state:
-    st.session_state.step = "login"
-
-if st.session_state.step == "login":
+def display_login_page():
+    """Displays the login page."""
     USERS_DB = load_user_db()
     st.title("📊 HR Dashboard")
     st.markdown("กรุณาเข้าสู่ระบบเพื่อดูข้อมูลการเข้า-ออกงานของคุณ")
@@ -220,8 +247,7 @@ if st.session_state.step == "login":
             phone = st.text_input(
                 "เบอร์โทรศัพท์",
                 placeholder="กรอกเบอร์โทรศัพท์ 10 หลัก",
-                max_chars=10,
-                value=st.session_state.get("phone", "")
+                max_chars=10
             )
             password = st.text_input(
                 "รหัสผ่าน",
@@ -233,7 +259,7 @@ if st.session_state.step == "login":
                 if phone in USERS_DB:
                     user_data = USERS_DB[phone]
                     if user_data.get("password") in ["null", None, ""]:
-                        st.session_state.phone = phone
+                        st.session_state.phone_to_set = phone
                         st.session_state.step = "set_password"
                         st.rerun()
                     elif user_data.get("password") and bcrypt.checkpw(password.encode('utf-8'), user_data.get("password").encode('utf-8')):
@@ -254,49 +280,31 @@ if st.session_state.step == "login":
                 st.session_state.step = "forgot_password"
                 st.rerun()
 
-elif st.session_state.step == "set_password":
+def password_form(mode):
+    """Displays password change/set form."""
     USERS_DB = load_user_db()
-    st.title(f"🔑 ตั้งรหัสผ่านครั้งแรก")
+    is_set_mode = mode == "set"
+    
+    st.title(f"🔑 {'ตั้งรหัสผ่านครั้งแรก' if is_set_mode else 'เปลี่ยนรหัสผ่าน'}")
+    
     col1, col2, col3 = st.columns([1, 1.5, 1])
     with col2:
         with st.container(border=True):
-            st.markdown(f"#### <div style='text-align: center;'>ตั้งรหัสผ่านครั้งแรก</div>", unsafe_allow_html=True)
-            st.info(f"สำหรับเบอร์โทรศัพท์: {st.session_state.phone}")
+            st.markdown(f"#### <div style='text-align: center;'>{'ตั้งรหัสผ่านครั้งแรก' if is_set_mode else 'เปลี่ยนรหัสผ่าน'}</div>", unsafe_allow_html=True)
+            
+            phone_target = st.session_state.phone_to_set if is_set_mode else st.session_state.phone
+            st.info(f"สำหรับเบอร์โทรศัพท์: {phone_target}")
+
+            if not is_set_mode:
+                current_password = st.text_input("รหัสผ่านปัจจุบัน", type="password")
+
             new_password = st.text_input("รหัสผ่านใหม่", type="password")
             confirm_password = st.text_input("ยืนยันรหัสผ่านใหม่", type="password")
 
             if st.button("💾 บันทึก", use_container_width=True, type="primary"):
-                user_data = USERS_DB[st.session_state.phone]
-                if not new_password:
-                    st.error("รหัสผ่านใหม่ต้องไม่เป็นค่าว่าง")
-                elif new_password != confirm_password:
-                    st.error("รหัสผ่านใหม่และการยืนยันไม่ตรงกัน")
-                else:
-                    hashed_password = bcrypt.hashpw(new_password.encode('utf-8'), bcrypt.gensalt()).decode('utf-8')
-                    user_data["password"] = hashed_password
-                    save_user_db(st.session_state.phone, user_data)
-                    st.success("บันทึกรหัสผ่านใหม่เรียบร้อยแล้ว!")
-                    st.session_state.step = "login"
-                    st.rerun()
-            if st.button("⬅️ กลับไปหน้าล็อกอิน", use_container_width=True):
-                st.session_state.step = "login"
-                st.rerun()
-
-elif st.session_state.step == "change_password":
-    USERS_DB = load_user_db()
-    st.title(f"🔑 เปลี่ยนรหัสผ่าน")
-    col1, col2, col3 = st.columns([1, 1.5, 1])
-    with col2:
-        with st.container(border=True):
-            st.markdown(f"#### <div style='text-align: center;'>เปลี่ยนรหัสผ่าน</div>", unsafe_allow_html=True)
-            st.info(f"สำหรับเบอร์โทรศัพท์: {st.session_state.phone}")
-            current_password = st.text_input("รหัสผ่านปัจจุบัน", type="password")
-            new_password = st.text_input("รหัสผ่านใหม่", type="password")
-            confirm_password = st.text_input("ยืนยันรหัสผ่านใหม่", type="password")
-
-            if st.button("💾 บันทึก", use_container_width=True, type="primary"):
-                user_data = USERS_DB[st.session_state.phone]
-                if not bcrypt.checkpw(current_password.encode('utf-8'), user_data.get("password", "").encode('utf-8')):
+                user_data = USERS_DB[phone_target]
+                
+                if not is_set_mode and not bcrypt.checkpw(current_password.encode('utf-8'), user_data.get("password", "").encode('utf-8')):
                     st.error("รหัสผ่านปัจจุบันไม่ถูกต้อง")
                 elif not new_password:
                     st.error("รหัสผ่านใหม่ต้องไม่เป็นค่าว่าง")
@@ -305,15 +313,17 @@ elif st.session_state.step == "change_password":
                 else:
                     hashed_password = bcrypt.hashpw(new_password.encode('utf-8'), bcrypt.gensalt()).decode('utf-8')
                     user_data["password"] = hashed_password
-                    save_user_db(st.session_state.phone, user_data)
+                    save_user_db(phone_target, user_data)
                     st.success("บันทึกรหัสผ่านใหม่เรียบร้อยแล้ว!")
-                    st.session_state.step = "dashboard"
+                    st.session_state.step = "login" if is_set_mode else "dashboard"
                     st.rerun()
-            if st.button("⬅️ กลับไปหน้าแดชบอร์ด", use_container_width=True):
-                st.session_state.step = "dashboard"
+            
+            if st.button(f"⬅️ กลับไปหน้า{'ล็อกอิน' if is_set_mode else 'แดชบอร์ด'}", use_container_width=True):
+                st.session_state.step = "login" if is_set_mode else "dashboard"
                 st.rerun()
 
-elif st.session_state.step == "forgot_password":
+def display_forgot_password_page():
+    """Displays the forgot password page for admin use."""
     USERS_DB = load_user_db()
     st.title("🔒 ลืมรหัสผ่าน")
     st.markdown("กรุณาให้ผู้ดูแลระบบช่วยเหลือในการรีเซ็ตรหัสผ่าน")
@@ -322,23 +332,11 @@ elif st.session_state.step == "forgot_password":
     with col2:
         with st.container(border=True):
             st.markdown("#### <div style='text-align: center;'>รีเซ็ตรหัสผ่าน</div>", unsafe_allow_html=True)
-            user_phone = st.text_input(
-                "เบอร์โทรศัพท์พนักงานที่ลืมรหัส", 
-                placeholder="กรอกเบอร์โทรศัพท์ 10 หลัก", 
-                max_chars=10
-            )
-            admin_phone = st.text_input(
-                "เบอร์โทรศัพท์ผู้ดูแลระบบ", 
-                placeholder="กรอกเบอร์โทรศัพท์ผู้ดูแลระบบ", 
-                max_chars=10
-            )
-            admin_password = st.text_input(
-                "รหัสผ่านผู้ดูแลระบบ", 
-                type="password",
-                placeholder="กรอกรหัสผ่านผู้ดูแลระบบ"
-            )
-            new_password = st.text_input("รหัสผ่านใหม่", type="password", key="new_password")
-            confirm_password = st.text_input("ยืนยันรหัสผ่านใหม่", type="password", key="confirm_new_password")
+            user_phone = st.text_input("เบอร์โทรศัพท์พนักงานที่ลืมรหัส", placeholder="กรอกเบอร์โทรศัพท์ 10 หลัก", max_chars=10)
+            admin_phone = st.text_input("เบอร์โทรศัพท์ผู้ดูแลระบบ", placeholder="กรอกเบอร์โทรศัพท์ผู้ดูแลระบบ", max_chars=10)
+            admin_password = st.text_input("รหัสผ่านผู้ดูแลระบบ", type="password", placeholder="กรอกรหัสผ่านผู้ดูแลระบบ")
+            new_password = st.text_input("รหัสผ่านใหม่", type="password")
+            confirm_password = st.text_input("ยืนยันรหัสผ่านใหม่", type="password")
 
             if st.button("💾 บันทึกรหัสผ่านใหม่", use_container_width=True, type="primary"):
                 if user_phone not in USERS_DB:
@@ -359,14 +357,16 @@ elif st.session_state.step == "forgot_password":
                         st.session_state.step = "login"
                         st.rerun()
 
-    if st.button("⬅️ กลับไปหน้าล็อกอิน", use_container_width=True):
-        st.session_state.step = "login"
-        st.rerun()
+            if st.button("⬅️ กลับไปหน้าล็อกอิน", use_container_width=True):
+                st.session_state.step = "login"
+                st.rerun()
 
-elif st.session_state.step == "dashboard":
+def display_dashboard():
+    """Displays the main dashboard page."""
     with st.sidebar:
         st.header("เมนู")
         st.info(f"ยินดีต้อนรับ,\n**{st.session_state.user}**")
+        st.file_uploader("อัปโหลดไฟล์ข้อมูล (Excel/CSV)", type=['xlsx', 'xls', 'csv'], key="data_file", on_change=lambda: st.cache_data.clear())
         if st.button("🔑 เปลี่ยนรหัสผ่าน"):
             st.session_state.step = "change_password"
             st.rerun()
@@ -376,7 +376,13 @@ elif st.session_state.step == "dashboard":
     st.header("📊 แดชบอร์ดสรุปข้อมูล")
     st.subheader(f"**{st.session_state.user}**")
 
-    df_full = load_data()
+    # Load data from the uploaded file
+    uploaded_file = st.session_state.get("data_file")
+    if uploaded_file is None:
+        st.warning("กรุณาอัปโหลดไฟล์ข้อมูลเพื่อดูแดชบอร์ด")
+        return
+        
+    df_full = load_data(uploaded_file)
     if not df_full.empty and 'วันที่' in df_full.columns:
         df_full_cleaned = df_full.dropna(subset=['วันที่'])
         if not df_full_cleaned.empty:
@@ -391,9 +397,7 @@ elif st.session_state.step == "dashboard":
     df_user, summary = process_user_data(df_full, st.session_state.user)
 
     if summary.empty:
-        st.info("ไม่พบข้อมูลการเข้า-ออกงานของคุณ")
-        # Ensure the user can still log out if no data is found
-        st.button("🚪 ออกจากระบบ", on_click=logout, use_container_width=True, type="secondary")
+        st.info("ไม่พบข้อมูลการเข้า-ออกงานของคุณในไฟล์ที่อัปโหลด")
     else:
         st.markdown("### 🗓️ สรุปภาพรวม")
         col1, col2, col3, col4 = st.columns(4)
@@ -444,11 +448,10 @@ elif st.session_state.step == "dashboard":
                             f'<p style="font-size: 0.9rem; margin: 0;">- <b>{thai_date(row["วันที่"])}</b>{time_display} ({row["ข้อยกเว้น"]})</p>',
                             unsafe_allow_html=True
                         )
-        st.divider()
-        col1, col2, col3 = st.columns([1, 2, 1])
-        with col2:
-            st.button("🚪 ออกจากระบบ", on_click=logout, use_container_width=True, type="secondary")
-
+    st.divider()
+    col1, col2, col3 = st.columns([1, 2, 1])
+    with col2:
+        st.button("🚪 ออกจากระบบ", on_click=logout, use_container_width=True, type="secondary")
 
 # -----------------------------
 # Main App Logic
@@ -456,9 +459,9 @@ elif st.session_state.step == "dashboard":
 if "step" not in st.session_state:
     st.session_state.step = "login"
 
-# Check if there's a valid session from local storage on every rerun
-session_id_from_local_storage = st.session_state.get("session_id_hidden")
-if session_id_from_local_storage:
+# Check for a valid session from local storage on every rerun
+session_id_from_local_storage = get_session_storage_value(key="session_id")
+if session_id_from_local_storage and "user" not in st.session_state:
     user_data = check_session(session_id_from_local_storage)
     if user_data:
         st.session_state.user = user_data["name"]
@@ -466,13 +469,14 @@ if session_id_from_local_storage:
         st.session_state.session_id = session_id_from_local_storage
         st.session_state.step = "dashboard"
 
+# State machine for navigation
 if st.session_state.step == "login":
-    display_login_page() # type: ignore
+    display_login_page()
 elif st.session_state.step == "set_password":
-    display_password_page(mode="set") # type: ignore
+    password_form(mode="set")
 elif st.session_state.step == "change_password":
-    display_password_page(mode="change") # type: ignore
+    password_form(mode="change")
 elif st.session_state.step == "forgot_password":
-    display_forgot_password_page() # type: ignore
+    display_forgot_password_page()
 elif st.session_state.step == "dashboard":
-    display_dashboard() # type: ignore
+    display_dashboard()
