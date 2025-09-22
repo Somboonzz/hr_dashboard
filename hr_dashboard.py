@@ -184,65 +184,9 @@ def logout():
     """Clears the session state and returns to the login page."""
     # This JS will clear the session ID from local storage
     components.html(
-        """
-        <script>
-            localStorage.removeItem('session_id');
-            setTimeout(() => {
-                window.parent.postMessage({ type: 'streamlit:rerun' }, '*');
-            }, 100);
-        </script>
-        """,
-        height=0
-    )
-    # The Python part to clear the state and delete from DB
-    delete_session(st.session_state.get("session_id"))
-    for key in list(st.session_state.keys()):
-        del st.session_state[key]
-    st.rerun()
 
-# -----------------------------
-# Session Management using Local Storage
-# -----------------------------
-
-# Inject JavaScript to get/set session ID from Local Storage
-# and CSS to hide the hidden text input
-components.html(
-    """
-    <script>
-    // This script will find and update the hidden text input for session management.
-    const sessionId = localStorage.getItem('session_id');
-    const inputElement = window.parent.document.querySelector('input[type="text"][data-testid="stTextInput"]');
-    
-    if (inputElement) {
-        inputElement.value = sessionId || '';
-        inputElement.dispatchEvent(new Event('change'));
-    }
-
-    // This part handles saving/clearing the session ID
-    window.addEventListener('message', (event) => {
-        if (event.data.type === 'saveSession' && event.data.sessionId) {
-            localStorage.setItem('session_id', event.data.sessionId);
-        } else if (event.data.type === 'clearSession') {
-            localStorage.removeItem('session_id');
-        }
-    });
-    </script>
-    <style>
-        /*
-        * Hides the Streamlit text input component used for session management.
-        * We use a specific data attribute to ensure we only hide this one component.
-        */
-        [data-testid="stTextInput"] {
-            display: none !important;
-        }
-    </style>
-    """,
     height=0,
 )
-
-# This st.text_input is now completely hidden by the CSS above
-st.text_input("Hidden Session ID", value="", key="session_id_hidden", label_visibility="hidden")
-
 
 # -----------------------------
 # UI Display Functions
