@@ -2,7 +2,7 @@ streamlit
 pandas
 altair
 pytz
-openpyxl
 firebase-admin
-bcrypt  
+bcrypt
 streamlit-js-eval
+openpyxl

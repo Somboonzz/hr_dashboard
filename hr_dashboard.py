@@ -467,12 +467,12 @@ if session_id_from_local_storage:
         st.session_state.step = "dashboard"
 
 if st.session_state.step == "login":
-    display_login_page()
+    display_login_page() # type: ignore
 elif st.session_state.step == "set_password":
-    display_password_page(mode="set")
+    display_password_page(mode="set") # type: ignore
 elif st.session_state.step == "change_password":
-    display_password_page(mode="change")
+    display_password_page(mode="change") # type: ignore
 elif st.session_state.step == "forgot_password":
-    display_forgot_password_page()
+    display_forgot_password_page() # type: ignore
 elif st.session_state.step == "dashboard":
-    display_dashboard()
+    display_dashboard() # type: ignore
