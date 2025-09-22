@@ -4,7 +4,7 @@ import altair as alt
 import datetime
 import os
 import pytz
-import json # ยังคงเก็บไว้เผื่อใช้ json.dump() หรือ json.load() ในกรณีอื่น
+import json 
 import firebase_admin
 from firebase_admin import credentials, firestore
 
@@ -29,7 +29,6 @@ st.markdown(hide_streamlit_style, unsafe_allow_html=True)
 
 # -----------------------------
 # Timezone and Date Functions
-# (ไม่มีการเปลี่ยนแปลงในส่วนนี้)
 # -----------------------------
 bangkok_tz = pytz.timezone("Asia/Bangkok")
 
@@ -119,10 +118,16 @@ def process_user_data(df, user_name):
 # Initialize Firebase (run only once)
 # ตรวจสอบว่ายังไม่ได้ initialize เพื่อป้องกัน error หากมีการ rerun
 if not firebase_admin._apps:
-    # ระบุ Path ไปยังไฟล์ Service Account Key ของคุณ
-    # เช่น "my-hr-dashboard-firebase-adminsdk-xxxxx-xxxxxxxxxx.json"
-    cred = credentials.Certificate("firestore-key.json") # <<<-- แก้ไขที่นี่
-    firebase_admin.initialize_app(cred)
+    # ใช้ st.secrets เพื่อเข้าถึงข้อมูล Service Account Key อย่างปลอดภัย
+    # ข้อมูลนี้ต้องถูกตั้งค่าใน Streamlit Secrets บน Streamlit Cloud
+    # ดูวิธีตั้งค่าได้ในข้อความแนะนำด้านล่าง
+    try:
+        cred = credentials.Certificate(st.secrets["firebase"])
+        firebase_admin.initialize_app(cred)
+    except Exception as e:
+        st.error(f"เกิดข้อผิดพลาดในการเชื่อมต่อ Firebase: {e}")
+        st.info("กรุณาตรวจสอบว่าคุณได้ตั้งค่า `secrets` บน Streamlit Cloud อย่างถูกต้อง")
+        st.stop()
 
 # แทนที่ฟังก์ชัน load_user_db() เดิม
 def load_user_db():
@@ -167,7 +172,6 @@ def logout():
 
 # -----------------------------
 # UI Display Functions
-# (ไม่มีการเปลี่ยนแปลงในส่วนนี้)
 # -----------------------------
 
 def display_login_page():
@@ -195,11 +199,11 @@ def display_login_page():
             if st.button("✅ เข้าสู่ระบบ", use_container_width=True, type="primary"):
                 if phone in st.session_state.USERS_DB:
                     user_data = st.session_state.USERS_DB[phone]
-                    if user_data["password"] is None:
+                    if user_data.get("password") is None: # ใช้ .get() เพื่อป้องกัน KeyError
                         st.session_state.phone = phone
                         st.session_state.step = "set_password"
                         st.rerun()
-                    elif user_data["password"] == password:
+                    elif user_data.get("password") == password:
                         st.session_state.user = user_data["name"]
                         st.session_state.phone = phone
                         st.session_state.step = "dashboard"
@@ -235,7 +239,7 @@ def display_password_page(mode="set"):
             if st.button("💾 บันทึก", use_container_width=True, type="primary"):
                 user_data = st.session_state.USERS_DB[st.session_state.phone]
                 
-                if mode == "change" and user_data["password"] != current_password:
+                if mode == "change" and user_data.get("password") != current_password:
                     st.error("รหัสผ่านปัจจุบันไม่ถูกต้อง")
                 elif not new_password:
                     st.error("รหัสผ่านใหม่ต้องไม่เป็นค่าว่าง")
@@ -285,7 +289,7 @@ def display_forgot_password_page():
             if st.button("💾 บันทึกรหัสผ่านใหม่", use_container_width=True, type="primary"):
                 # ใน Firebase, "0888888888" ต้องมี Document ใน Collection 'users'
                 # และมี field 'password' เป็น 'admin' ด้วย
-                if user_phone not in st.session_state.USERS_DB or (user_phone == "0888888888" and st.session_state.USERS_DB[user_phone]["name"] != "ผู้ดูแลระบบ"):
+                if user_phone not in st.session_state.USERS_DB or (user_phone == "0888888888" and st.session_state.USERS_DB[user_phone].get("name") != "ผู้ดูแลระบบ"):
                     st.error("ไม่พบเบอร์โทรศัพท์พนักงานนี้ในระบบ")
                 elif admin_phone not in st.session_state.USERS_DB or st.session_state.USERS_DB[admin_phone].get("password") != "admin": # ตรวจสอบ password ของ admin
                     st.error("เบอร์โทรศัพท์ผู้ดูแลระบบหรือรหัสผ่านไม่ถูกต้อง")
@@ -356,11 +360,11 @@ def display_dashboard():
         x=alt.X('จำนวนวัน/ครั้ง:Q', title='จำนวน (วัน/ครั้ง)'),
         y=alt.Y('ประเภท:N', title='ประเภท', sort='-x'),
         color=alt.Color('ประเภท:N', 
-                                 scale=alt.Scale(
-                                     domain=['ลาป่วย/ลากิจ', 'ขาด', 'สาย', 'พักผ่อน'],
-                                     range=['#FFC300', '#C70039', '#FF5733', '#33C1FF']
-                                 ),
-                                 legend=None),
+                         scale=alt.Scale(
+                             domain=['ลาป่วย/ลากิจ', 'ขาด', 'สาย', 'พักผ่อน'],
+                             range=['#FFC300', '#C70039', '#FF5733', '#33C1FF']
+                         ),
+                         legend=None),
         tooltip=['ประเภท', 'จำนวนวัน/ครั้ง']
     ).properties(title='กราฟเปรียบเทียบข้อมูล')
     st.altair_chart(chart, use_container_width=True)
@@ -402,4 +406,4 @@ elif st.session_state.step == "forgot_password":
 elif st.session_state.step == "dashboard":
     display_dashboard()
 else:
-    display_login_page() # Default to login page if state is unknown
+    display_login_page()
