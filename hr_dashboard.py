@@ -1,4 +1,5 @@
 import streamlit as st
+import streamlit.components.v1 as components
 import pandas as pd
 import altair as alt
 import datetime
@@ -9,6 +10,7 @@ import firebase_admin
 from firebase_admin import credentials, firestore
 import bcrypt
 import uuid
+import time
 
 # -----------------------------
 # Page Setup and Styling
@@ -47,7 +49,7 @@ def format_time(dt):
     return dt.strftime("%H:%M")
 
 # -----------------------------
-# Data Handling (load_data and process_user_data remain unchanged)
+# Data Handling
 # -----------------------------
 @st.cache_data
 def load_data(file_path="attendances.xlsx"):
@@ -87,25 +89,19 @@ def process_user_data(df, user_name):
     if df.empty or "ชื่อ-สกุล" not in df.columns:
         return pd.DataFrame(), pd.DataFrame()
 
-    # Normalize user name from Firebase
     normalized_user_name = user_name.strip().lower()
-
-    # Normalize names in the DataFrame for comparison
     df["ชื่อ-สกุล_normalized"] = df["ชื่อ-สกุล"].astype(str).str.strip().str.lower()
     
-    # Filter the DataFrame using the normalized names
     df_user = df[df["ชื่อ-สกุล_normalized"] == normalized_user_name].copy()
     if df_user.empty:
         return pd.DataFrame(), pd.DataFrame()
 
-    # Clean up string columns
     for col in ["ชื่อ-สกุล", "แผนก", "ข้อยกเว้น"]:
         if col in df_user.columns:
             df_user[col] = df_user[col].astype(str).str.strip().str.replace(r"\s+", " ", regex=True)
     if "แผนก" in df_user.columns:
         df_user["แผนก"] = df_user["แผนก"].replace({"nan": "ไม่ระบุ", "": "ไม่ระบุ"})
     
-    # Calculate leave days
     def leave_days(exception_text):
         return 0.5 if "ครึ่งวัน" in str(exception_text) else 1
 
@@ -154,7 +150,7 @@ def save_user_db(phone, user_data):
         st.error(f"Error saving user data to Firestore: {e}")
 
 def create_session(user_phone):
-    """Creates a new session in Firestore."""
+    """Creates a new session in Firestore and returns its ID."""
     db = firestore.client()
     session_id = str(uuid.uuid4())
     session_ref = db.collection("sessions").document(session_id)
@@ -162,41 +158,83 @@ def create_session(user_phone):
         "user_phone": user_phone,
         "created_at": firestore.SERVER_TIMESTAMP
     })
-    st.session_state.session_id = session_id
+    return session_id
 
-def delete_session():
+def delete_session(session_id):
     """Deletes the current session from Firestore."""
-    if "session_id" in st.session_state:
+    if session_id:
         db = firestore.client()
-        db.collection("sessions").document(st.session_state.session_id).delete()
-        del st.session_state.session_id
+        db.collection("sessions").document(session_id).delete()
+
+def check_session(session_id):
+    """Checks for a valid session in Firestore."""
+    if not session_id:
+        return None
+    db = firestore.client()
+    session_ref = db.collection("sessions").document(session_id)
+    session_doc = session_ref.get()
+    if session_doc.exists:
+        user_phone = session_doc.to_dict()["user_phone"]
+        USERS_DB = load_user_db()
+        if user_phone in USERS_DB:
+            return USERS_DB[user_phone]
+    return None
 
 def logout():
     """Clears the session state and returns to the login page."""
-    delete_session()
+    # This JS will clear the session ID from local storage
+    components.html(
+        """
+        <script>
+            localStorage.removeItem('session_id');
+            setTimeout(() => {
+                window.parent.postMessage({ type: 'streamlit:rerun' }, '*');
+            }, 100);
+        </script>
+        """,
+        height=0
+    )
+    # The Python part to clear the state and delete from DB
+    delete_session(st.session_state.get("session_id"))
     for key in list(st.session_state.keys()):
         del st.session_state[key]
     st.rerun()
 
-def check_session():
-    """Checks for a valid session in Firestore."""
-    if "session_id" in st.session_state:
-        db = firestore.client()
-        session_ref = db.collection("sessions").document(st.session_state.session_id)
-        session_doc = session_ref.get()
-        if session_doc.exists:
-            user_phone = session_doc.to_dict()["user_phone"]
-            USERS_DB = load_user_db()
-            if user_phone in USERS_DB:
-                st.session_state.user = USERS_DB[user_phone]["name"]
-                st.session_state.phone = user_phone
-                st.session_state.step = "dashboard"
-                return True
-    return False
+# -----------------------------
+# Session Management using Local Storage
+# -----------------------------
+
+# Inject JavaScript to get/set session ID from Local Storage
+# The value is passed back to Python via a hidden Streamlit text_input
+components.html(
+    """
+    <script>
+    const sessionId = localStorage.getItem('session_id');
+    const inputElement = window.parent.document.querySelector('input[type="text"][data-testid="stTextInput"]');
+
+    if (inputElement) {
+        inputElement.value = sessionId || '';
+        inputElement.dispatchEvent(new Event('change'));
+    }
+
+    window.addEventListener('message', (event) => {
+        if (event.data.type === 'saveSession' && event.data.sessionId) {
+            localStorage.setItem('session_id', event.data.sessionId);
+        } else if (event.data.type === 'clearSession') {
+            localStorage.removeItem('session_id');
+        }
+    });
+    </script>
+    <input type="text" id="session_id_input" style="display:none;">
+    """,
+    height=0,
+)
+session_id_input = st.text_input("Hidden Session ID", value="", key="session_id_hidden", label_visibility="hidden")
 
 # -----------------------------
 # UI Display Functions
 # -----------------------------
+
 def display_login_page():
     """Displays the login form."""
     USERS_DB = load_user_db()
@@ -229,9 +267,19 @@ def display_login_page():
                     elif user_data.get("password") and bcrypt.checkpw(password.encode('utf-8'), user_data.get("password").encode('utf-8')):
                         st.session_state.user = user_data["name"]
                         st.session_state.phone = phone
-                        create_session(phone) # Create and save session
+                        session_id = create_session(phone)
+                        
+                        # Save session ID to browser's local storage via JS
+                        components.html(f"""
+                            <script>
+                                localStorage.setItem('session_id', '{session_id}');
+                            </script>
+                            """, height=0)
+                        
+                        st.session_state.session_id = session_id
                         st.session_state.step = "dashboard"
                         st.success("เข้าสู่ระบบสำเร็จ!")
+                        time.sleep(1) # Give JS time to save before rerun
                         st.rerun()
                     else:
                         st.error("รหัสผ่านไม่ถูกต้อง")
@@ -438,10 +486,17 @@ def display_dashboard():
 if "step" not in st.session_state:
     st.session_state.step = "login"
 
-# Check if there's a valid session on every rerun
-if st.session_state.step == "login" and check_session():
-    pass # Session restored, UI will switch to dashboard
-elif st.session_state.step == "login":
+# Check if there's a valid session from local storage on every rerun
+session_id_from_local_storage = st.session_state.get("session_id_hidden")
+if session_id_from_local_storage:
+    user_data = check_session(session_id_from_local_storage)
+    if user_data:
+        st.session_state.user = user_data["name"]
+        st.session_state.phone = user_data["phone"]
+        st.session_state.session_id = session_id_from_local_storage
+        st.session_state.step = "dashboard"
+
+if st.session_state.step == "login":
     display_login_page()
 elif st.session_state.step == "set_password":
     display_password_page(mode="set")
