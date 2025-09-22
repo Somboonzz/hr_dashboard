@@ -158,9 +158,9 @@ def save_user_db(phone, user_data):
 
 def logout():
     """Clears the session state and returns to the login page."""
+    # Delete all keys from session state
     for key in list(st.session_state.keys()):
         del st.session_state[key]
-    st.session_state.step = "login"
     st.rerun()
 
 # -----------------------------
@@ -182,7 +182,8 @@ def display_login_page():
             phone = st.text_input(
                 "เบอร์โทรศัพท์",
                 placeholder="กรอกเบอร์โทรศัพท์ 10 หลัก",
-                max_chars=10
+                max_chars=10,
+                value=st.session_state.get("phone", "") # Keep phone number in the input field
             )
             password = st.text_input(
                 "รหัสผ่าน",
@@ -193,16 +194,15 @@ def display_login_page():
             if st.button("✅ เข้าสู่ระบบ", use_container_width=True, type="primary"):
                 if phone in USERS_DB:
                     user_data = USERS_DB[phone]
-                    # Check for "null" string, None, or empty string before proceeding
                     if user_data.get("password") in ["null", None, ""]:
                         st.session_state.phone = phone
                         st.session_state.step = "set_password"
                         st.rerun()
-                    # Now it's safe to check the password with bcrypt
                     elif user_data.get("password") and bcrypt.checkpw(password.encode('utf-8'), user_data.get("password").encode('utf-8')):
                         st.session_state.user = user_data["name"]
                         st.session_state.phone = phone
                         st.session_state.step = "dashboard"
+                        st.success("เข้าสู่ระบบสำเร็จ!")
                         st.rerun()
                     else:
                         st.error("รหัสผ่านไม่ถูกต้อง")
@@ -257,7 +257,8 @@ def display_password_page(mode="set"):
                 
             if mode == "set":
                 if st.button("⬅️ กลับไปหน้าล็อกอิน", use_container_width=True):
-                    logout()
+                    st.session_state.step = "login"
+                    st.rerun()
             else:
                 if st.button("⬅️ กลับไปหน้าแดชบอร์ด", use_container_width=True):
                     st.session_state.step = "dashboard"
@@ -293,18 +294,14 @@ def display_forgot_password_page():
             confirm_password = st.text_input("ยืนยันรหัสผ่านใหม่", type="password", key="confirm_new_password")
 
             if st.button("💾 บันทึกรหัสผ่านใหม่", use_container_width=True, type="primary"):
-                # Check if the user to be reset exists
                 if user_phone not in USERS_DB:
                     st.error("ไม่พบเบอร์โทรศัพท์พนักงานนี้ในระบบ")
-                # Check if the admin exists and get their data
                 elif admin_phone not in USERS_DB:
                     st.error("ไม่พบเบอร์โทรศัพท์ผู้ดูแลระบบในระบบ")
                 else:
                     admin_data = USERS_DB[admin_phone]
-                    # Check admin password
                     if not bcrypt.checkpw(admin_password.encode('utf-8'), admin_data.get("password", "").encode('utf-8')):
                         st.error("รหัสผ่านผู้ดูแลระบบไม่ถูกต้อง")
-                    # Validate new password
                     elif not new_password or new_password != confirm_password:
                         st.error("รหัสผ่านใหม่และการยืนยันไม่ตรงกัน หรือเป็นค่าว่าง")
                     else:
@@ -316,7 +313,8 @@ def display_forgot_password_page():
                         st.rerun()
 
     if st.button("⬅️ กลับไปหน้าล็อกอิน", use_container_width=True):
-        logout()
+        st.session_state.step = "login"
+        st.rerun()
 
 
 def display_dashboard():
@@ -408,15 +406,11 @@ def display_dashboard():
 # -----------------------------
 # Main App Logic
 # -----------------------------
-if "is_authenticated" not in st.session_state:
-    st.session_state.is_authenticated = False
-
-if st.session_state.is_authenticated:
-    st.session_state.step = "dashboard"
-else:
-    # Check if a user is logging in
-    if st.session_state.step == "dashboard":
-        st.session_state.is_authenticated = True
+# Re-introduce proper session state initialization
+if "step" not in st.session_state:
+    st.session_state.step = "login"
+    st.session_state.phone = ""
+    st.session_state.user = ""
 
 if st.session_state.step == "login":
     display_login_page()
@@ -428,5 +422,3 @@ elif st.session_state.step == "forgot_password":
     display_forgot_password_page()
 elif st.session_state.step == "dashboard":
     display_dashboard()
-else:
-    display_login_page()
