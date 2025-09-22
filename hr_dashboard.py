@@ -6,7 +6,7 @@ import os
 import pytz
 import json
 import firebase_admin
-from firebase_admin import credentials, firestore  #1234567890
+from firebase_admin import credentials, firestore 
 
 # -----------------------------
 # Page Setup and Styling
