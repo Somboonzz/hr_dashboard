@@ -319,6 +319,9 @@ def display_forgot_password_page():
 
 def display_dashboard():
     """Displays the user's dashboard."""
+    # Add a top-level logout button for better mobile access
+    st.button("🚪 ออกจากระบบ", on_click=logout, type="secondary")
+
     with st.sidebar:
         st.header("เมนู")
         st.info(f"ยินดีต้อนรับ,\n**{st.session_state.user}**")
@@ -328,6 +331,7 @@ def display_dashboard():
             st.rerun()
         
         st.divider()
+        # The sidebar logout button is still here for desktop
         st.button("🚪 ออกจากระบบ", on_click=logout, use_container_width=True)
 
     st.header("📊 แดชบอร์ดสรุปข้อมูล")
