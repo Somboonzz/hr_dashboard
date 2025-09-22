@@ -7,7 +7,6 @@ import pytz
 import json
 import bcrypt
 import uuid
-from streamlit_js_eval import get_session_storage_value, set_session_storage_value
 import firebase_admin
 from firebase_admin import credentials, firestore
 
@@ -211,7 +210,6 @@ def logout():
     """Clears the session state and returns to the login page."""
     if st.session_state.get("session_id"):
         delete_session(st.session_state.session_id)
-    set_session_storage_value("session_id", None)
     st.session_state.clear()
     st.rerun()
 
@@ -266,7 +264,6 @@ def display_login_page():
                         st.session_state.user = user_data["name"]
                         st.session_state.phone = phone
                         session_id = create_session(phone)
-                        set_session_storage_value("session_id", session_id)
                         st.session_state.session_id = session_id
                         st.session_state.step = "dashboard"
                         st.rerun()
@@ -458,16 +455,6 @@ def display_dashboard():
 # -----------------------------
 if "step" not in st.session_state:
     st.session_state.step = "login"
-
-# Check for a valid session from local storage on every rerun
-session_id_from_local_storage = get_session_storage_value(key="session_id")
-if session_id_from_local_storage and "user" not in st.session_state:
-    user_data = check_session(session_id_from_local_storage)
-    if user_data:
-        st.session_state.user = user_data["name"]
-        st.session_state.phone = user_data["phone"]
-        st.session_state.session_id = session_id_from_local_storage
-        st.session_state.step = "dashboard"
 
 # State machine for navigation
 if st.session_state.step == "login":
