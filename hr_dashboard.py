@@ -211,13 +211,13 @@ def display_login_page():
             if st.button("✅ เข้าสู่ระบบ", use_container_width=True, type="primary"):
                 if phone in USERS_DB:
                     user_data = USERS_DB[phone]
-                    # Check for both actual None and the string "null"
-                    if user_data.get("password") is None or user_data.get("password") == "null":
+                    # Check for "null" string value or None before proceeding
+                    if user_data.get("password") in ["null", None]:
                         st.session_state.phone = phone
                         st.session_state.step = "set_password"
                         st.rerun()
-                    # Use bcrypt to compare the password hash
-                    elif user_data.get("password") and bcrypt.checkpw(password.encode('utf-8'), user_data.get("password").encode('utf-8')):
+                    # Now it's safe to check the password with bcrypt
+                    elif bcrypt.checkpw(password.encode('utf-8'), user_data.get("password").encode('utf-8')):
                         st.session_state.user = user_data["name"]
                         st.session_state.phone = phone
                         st.session_state.step = "dashboard"
@@ -411,6 +411,7 @@ def display_dashboard():
                         f'<p style="font-size: 0.9rem; margin: 0;">- <b>{thai_date(row["วันที่"])}</b>{time_display} ({row["ข้อยกเว้น"]})</p>',
                         unsafe_allow_html=True
                     )
+
 
 # -----------------------------
 # Main App Logic
