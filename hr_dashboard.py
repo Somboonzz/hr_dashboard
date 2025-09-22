@@ -4,7 +4,7 @@ import altair as alt
 import datetime
 import os
 import pytz
-import json 
+import json
 import firebase_admin
 from firebase_admin import credentials, firestore
 
@@ -45,7 +45,7 @@ def format_time(dt):
     return dt.strftime("%H:%M")
 
 # -----------------------------
-# Data Handling (load_data และ process_user_data ไม่มีเปลี่ยนแปลง)
+# Data Handling (load_data and process_user_data remain unchanged)
 # -----------------------------
 @st.cache_data
 def load_data(file_path="attendances.xlsx"):
@@ -116,11 +116,7 @@ def process_user_data(df, user_name):
 # -----------------------------
 
 # Initialize Firebase (run only once)
-# ตรวจสอบว่ายังไม่ได้ initialize เพื่อป้องกัน error หากมีการ rerun
 if not firebase_admin._apps:
-    # ใช้ st.secrets เพื่อเข้าถึงข้อมูล Service Account Key อย่างปลอดภัย
-    # ข้อมูลนี้ต้องถูกตั้งค่าใน Streamlit Secrets บน Streamlit Cloud
-    # ดูวิธีตั้งค่าได้ในข้อความแนะนำด้านล่าง
     try:
         cred = credentials.Certificate(st.secrets["firebase"])
         firebase_admin.initialize_app(cred)
@@ -129,12 +125,12 @@ if not firebase_admin._apps:
         st.info("กรุณาตรวจสอบว่าคุณได้ตั้งค่า `secrets` บน Streamlit Cloud อย่างถูกต้อง")
         st.stop()
 
-# แทนที่ฟังก์ชัน load_user_db() เดิม
+@st.cache_data(show_spinner="กำลังโหลดข้อมูลผู้ใช้...")
 def load_user_db():
     """Loads the user database from Firestore."""
     try:
         db = firestore.client()
-        users_ref = db.collection("users") # อ้างอิง Collection ชื่อ 'users'
+        users_ref = db.collection("users")
         users_dict = {}
         for doc in users_ref.stream():
             users_dict[doc.id] = doc.to_dict()
@@ -143,29 +139,26 @@ def load_user_db():
         st.error(f"Error loading user database from Firestore: {e}")
         return {}
 
-# แทนที่ฟังก์ชัน save_user_db() เดิม
-def save_user_db():
-    """Saves the current user database from session state to Firestore."""
+def save_user_db(phone, user_data):
+    """Saves a single user's data to Firestore for improved efficiency."""
     try:
         db = firestore.client()
-        for phone, data in st.session_state.USERS_DB.items():
-            # ใช้ Document ID เป็นเบอร์โทรศัพท์ และบันทึกข้อมูล
-            db.collection("users").document(phone).set(data)
-        # st.success("User database saved to Firestore.") # อาจจะคอมเมนต์บรรทัดนี้ใน Production เพื่อไม่ให้ User เห็น
+        db.collection("users").document(phone).set(user_data)
     except Exception as e:
-        st.error(f"Error saving user database to Firestore: {e}")
+        st.error(f"Error saving user data to Firestore: {e}")
+
 
 # Initialize session state
 if "step" not in st.session_state:
     st.session_state.step = "login"
     st.session_state.phone = ""
     st.session_state.user = ""
-    st.session_state.USERS_DB = load_user_db() # โหลดข้อมูลจาก Firestore ตอนเริ่มต้น
+    st.session_state.USERS_DB = load_user_db()
 
 def logout():
     """Clears the session state and returns to the login page."""
     for key in list(st.session_state.keys()):
-        if key != 'USERS_DB': # Keep the loaded DB in memory
+        if key != 'USERS_DB':
             del st.session_state[key]
     st.session_state.step = "login"
     st.rerun()
@@ -199,7 +192,7 @@ def display_login_page():
             if st.button("✅ เข้าสู่ระบบ", use_container_width=True, type="primary"):
                 if phone in st.session_state.USERS_DB:
                     user_data = st.session_state.USERS_DB[phone]
-                    if user_data.get("password") is None: # ใช้ .get() เพื่อป้องกัน KeyError
+                    if user_data.get("password") is None:
                         st.session_state.phone = phone
                         st.session_state.step = "set_password"
                         st.rerun()
@@ -247,12 +240,12 @@ def display_password_page(mode="set"):
                     st.error("รหัสผ่านใหม่และการยืนยันไม่ตรงกัน")
                 else:
                     st.session_state.USERS_DB[st.session_state.phone]["password"] = new_password
-                    save_user_db()
+                    save_user_db(st.session_state.phone, st.session_state.USERS_DB[st.session_state.phone])
                     st.success("บันทึกรหัสผ่านใหม่เรียบร้อยแล้ว!")
                     if mode == "change":
                         st.session_state.step = "dashboard"
                     else: # mode == "set"
-                        st.session_state.step = "login" # Go back to login
+                        st.session_state.step = "login"
                     st.rerun()
                 
             if mode == "set":
@@ -287,17 +280,17 @@ def display_forgot_password_page():
             confirm_password = st.text_input("ยืนยันรหัสผ่านใหม่", type="password", key="confirm_new_password")
 
             if st.button("💾 บันทึกรหัสผ่านใหม่", use_container_width=True, type="primary"):
-                # ใน Firebase, "0888888888" ต้องมี Document ใน Collection 'users'
-                # และมี field 'password' เป็น 'admin' ด้วย
-                if user_phone not in st.session_state.USERS_DB or (user_phone == "0888888888" and st.session_state.USERS_DB[user_phone].get("name") != "ผู้ดูแลระบบ"):
+                # NOTE: This admin verification is hardcoded and not secure.
+                # For a real application, consider a more robust admin login or a secure token system.
+                if user_phone not in st.session_state.USERS_DB:
                     st.error("ไม่พบเบอร์โทรศัพท์พนักงานนี้ในระบบ")
-                elif admin_phone not in st.session_state.USERS_DB or st.session_state.USERS_DB[admin_phone].get("password") != "admin": # ตรวจสอบ password ของ admin
+                elif admin_phone not in st.session_state.USERS_DB or st.session_state.USERS_DB[admin_phone].get("password") != "admin":
                     st.error("เบอร์โทรศัพท์ผู้ดูแลระบบหรือรหัสผ่านไม่ถูกต้อง")
                 elif not new_password or new_password != confirm_password:
                     st.error("รหัสผ่านใหม่และการยืนยันไม่ตรงกัน หรือเป็นค่าว่าง")
                 else:
                     st.session_state.USERS_DB[user_phone]["password"] = new_password
-                    save_user_db()
+                    save_user_db(user_phone, st.session_state.USERS_DB[user_phone])
                     st.success("ตั้งรหัสผ่านใหม่สำเร็จแล้ว! กรุณากลับไปหน้าล็อกอิน")
                     st.session_state.step = "login"
                     st.rerun()
