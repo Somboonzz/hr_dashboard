@@ -1,5 +1,4 @@
 import streamlit as st
-import streamlit.components.v1 as components
 import pandas as pd
 import altair as alt
 import datetime
@@ -10,7 +9,7 @@ import firebase_admin
 from firebase_admin import credentials, firestore
 import bcrypt
 import uuid
-import time
+from streamlit_js_eval import get_session_storage_value, set_session_storage_value
 
 # -----------------------------
 # Page Setup and Styling
@@ -166,6 +165,14 @@ def delete_session(session_id):
         db = firestore.client()
         db.collection("sessions").document(session_id).delete()
 
+def logout():
+    """Clears the session state and returns to the login page."""
+    delete_session(st.session_state.get("session_id"))
+    set_session_storage_value("session_id", None)
+    for key in list(st.session_state.keys()):
+        del st.session_state[key]
+    st.rerun()
+
 def check_session(session_id):
     """Checks for a valid session in Firestore."""
     if not session_id:
@@ -177,66 +184,31 @@ def check_session(session_id):
         user_phone = session_doc.to_dict()["user_phone"]
         USERS_DB = load_user_db()
         if user_phone in USERS_DB:
-            return USERS_DB[user_phone]
+            user_data = USERS_DB[user_phone]
+            user_data["phone"] = user_phone
+            return user_data
     return None
 
-def logout():
-    """Clears the session state and returns to the login page."""
-    # This JS will clear the session ID from local storage
-    components.html(
-        """
-        <script>
-            localStorage.removeItem('session_id');
-            setTimeout(() => {
-                window.parent.postMessage({ type: 'streamlit:rerun' }, '*');
-            }, 100);
-        </script>
-        """,
-        height=0
-    )
-    # The Python part to clear the state and delete from DB
-    delete_session(st.session_state.get("session_id"))
-    for key in list(st.session_state.keys()):
-        del st.session_state[key]
-    st.rerun()
-
 # -----------------------------
-# Session Management using Local Storage
+# Main App Logic
 # -----------------------------
+# --- Check for existing session at the start of every run ---
+session_id_from_local_storage = get_session_storage_value(key="session_id")
+if session_id_from_local_storage and "user" not in st.session_state:
+    user_data = check_session(session_id_from_local_storage)
+    if user_data:
+        st.session_state.user = user_data["name"]
+        st.session_state.phone = user_data["phone"]
+        st.session_state.session_id = session_id_from_local_storage
+        st.session_state.step = "dashboard"
+    else:
+        # Session in local storage is invalid, clear it
+        set_session_storage_value("session_id", None)
 
-# Inject JavaScript to get/set session ID from Local Storage
-# The value is passed back to Python via a hidden Streamlit text_input
-components.html(
-    """
-    <script>
-    const sessionId = localStorage.getItem('session_id');
-    const inputElement = window.parent.document.querySelector('input[type="text"][data-testid="stTextInput"]');
+if "step" not in st.session_state:
+    st.session_state.step = "login"
 
-    if (inputElement) {
-        inputElement.value = sessionId || '';
-        inputElement.dispatchEvent(new Event('change'));
-    }
-
-    window.addEventListener('message', (event) => {
-        if (event.data.type === 'saveSession' && event.data.sessionId) {
-            localStorage.setItem('session_id', event.data.sessionId);
-        } else if (event.data.type === 'clearSession') {
-            localStorage.removeItem('session_id');
-        }
-    });
-    </script>
-    <input type="text" id="session_id_input" style="display:none;">
-    """,
-    height=0,
-)
-session_id_input = st.text_input("Hidden Session ID", value="", key="session_id_hidden", label_visibility="hidden")
-
-# -----------------------------
-# UI Display Functions
-# -----------------------------
-
-def display_login_page():
-    """Displays the login form."""
+if st.session_state.step == "login":
     USERS_DB = load_user_db()
     st.title("📊 HR Dashboard")
     st.markdown("กรุณาเข้าสู่ระบบเพื่อดูข้อมูลการเข้า-ออกงานของคุณ")
@@ -268,18 +240,9 @@ def display_login_page():
                         st.session_state.user = user_data["name"]
                         st.session_state.phone = phone
                         session_id = create_session(phone)
-                        
-                        # Save session ID to browser's local storage via JS
-                        components.html(f"""
-                            <script>
-                                localStorage.setItem('session_id', '{session_id}');
-                            </script>
-                            """, height=0)
-                        
+                        set_session_storage_value("session_id", session_id)
                         st.session_state.session_id = session_id
                         st.session_state.step = "dashboard"
-                        st.success("เข้าสู่ระบบสำเร็จ!")
-                        time.sleep(1) # Give JS time to save before rerun
                         st.rerun()
                     else:
                         st.error("รหัสผ่านไม่ถูกต้อง")
@@ -290,30 +253,50 @@ def display_login_page():
             if st.button("🔒 ลืมรหัสผ่าน", use_container_width=True):
                 st.session_state.step = "forgot_password"
                 st.rerun()
-                
-def display_password_page(mode="set"):
-    """Displays the page for setting or changing a password."""
-    USERS_DB = load_user_db()
-    title_map = {"set": "ตั้งรหัสผ่านครั้งแรก", "change": "เปลี่ยนรหัสผ่าน"}
-    title = title_map.get(mode, "จัดการรหัสผ่าน")
-    st.title(f"🔑 {title}")
 
+elif st.session_state.step == "set_password":
+    USERS_DB = load_user_db()
+    st.title(f"🔑 ตั้งรหัสผ่านครั้งแรก")
     col1, col2, col3 = st.columns([1, 1.5, 1])
     with col2:
         with st.container(border=True):
-            st.markdown(f"#### <div style='text-align: center;'>{title}</div>", unsafe_allow_html=True)
+            st.markdown(f"#### <div style='text-align: center;'>ตั้งรหัสผ่านครั้งแรก</div>", unsafe_allow_html=True)
             st.info(f"สำหรับเบอร์โทรศัพท์: {st.session_state.phone}")
-
-            if mode == "change":
-                current_password = st.text_input("รหัสผ่านปัจจุบัน", type="password")
-            
             new_password = st.text_input("รหัสผ่านใหม่", type="password")
             confirm_password = st.text_input("ยืนยันรหัสผ่านใหม่", type="password")
 
             if st.button("💾 บันทึก", use_container_width=True, type="primary"):
                 user_data = USERS_DB[st.session_state.phone]
-                
-                if mode == "change" and not bcrypt.checkpw(current_password.encode('utf-8'), user_data.get("password", "").encode('utf-8')):
+                if not new_password:
+                    st.error("รหัสผ่านใหม่ต้องไม่เป็นค่าว่าง")
+                elif new_password != confirm_password:
+                    st.error("รหัสผ่านใหม่และการยืนยันไม่ตรงกัน")
+                else:
+                    hashed_password = bcrypt.hashpw(new_password.encode('utf-8'), bcrypt.gensalt()).decode('utf-8')
+                    user_data["password"] = hashed_password
+                    save_user_db(st.session_state.phone, user_data)
+                    st.success("บันทึกรหัสผ่านใหม่เรียบร้อยแล้ว!")
+                    st.session_state.step = "login"
+                    st.rerun()
+            if st.button("⬅️ กลับไปหน้าล็อกอิน", use_container_width=True):
+                st.session_state.step = "login"
+                st.rerun()
+
+elif st.session_state.step == "change_password":
+    USERS_DB = load_user_db()
+    st.title(f"🔑 เปลี่ยนรหัสผ่าน")
+    col1, col2, col3 = st.columns([1, 1.5, 1])
+    with col2:
+        with st.container(border=True):
+            st.markdown(f"#### <div style='text-align: center;'>เปลี่ยนรหัสผ่าน</div>", unsafe_allow_html=True)
+            st.info(f"สำหรับเบอร์โทรศัพท์: {st.session_state.phone}")
+            current_password = st.text_input("รหัสผ่านปัจจุบัน", type="password")
+            new_password = st.text_input("รหัสผ่านใหม่", type="password")
+            confirm_password = st.text_input("ยืนยันรหัสผ่านใหม่", type="password")
+
+            if st.button("💾 บันทึก", use_container_width=True, type="primary"):
+                user_data = USERS_DB[st.session_state.phone]
+                if not bcrypt.checkpw(current_password.encode('utf-8'), user_data.get("password", "").encode('utf-8')):
                     st.error("รหัสผ่านปัจจุบันไม่ถูกต้อง")
                 elif not new_password:
                     st.error("รหัสผ่านใหม่ต้องไม่เป็นค่าว่าง")
@@ -324,23 +307,13 @@ def display_password_page(mode="set"):
                     user_data["password"] = hashed_password
                     save_user_db(st.session_state.phone, user_data)
                     st.success("บันทึกรหัสผ่านใหม่เรียบร้อยแล้ว!")
-                    if mode == "change":
-                        st.session_state.step = "dashboard"
-                    else:
-                        st.session_state.step = "login"
-                    st.rerun()
-                
-            if mode == "set":
-                if st.button("⬅️ กลับไปหน้าล็อกอิน", use_container_width=True):
-                    st.session_state.step = "login"
-                    st.rerun()
-            else:
-                if st.button("⬅️ กลับไปหน้าแดชบอร์ด", use_container_width=True):
                     st.session_state.step = "dashboard"
                     st.rerun()
+            if st.button("⬅️ กลับไปหน้าแดชบอร์ด", use_container_width=True):
+                st.session_state.step = "dashboard"
+                st.rerun()
 
-def display_forgot_password_page():
-    """Displays the page for password reset with admin verification."""
+elif st.session_state.step == "forgot_password":
     USERS_DB = load_user_db()
     st.title("🔒 ลืมรหัสผ่าน")
     st.markdown("กรุณาให้ผู้ดูแลระบบช่วยเหลือในการรีเซ็ตรหัสผ่าน")
@@ -390,17 +363,13 @@ def display_forgot_password_page():
         st.session_state.step = "login"
         st.rerun()
 
-def display_dashboard():
-    """Displays the user's dashboard."""
-    
+elif st.session_state.step == "dashboard":
     with st.sidebar:
         st.header("เมนู")
         st.info(f"ยินดีต้อนรับ,\n**{st.session_state.user}**")
-        
         if st.button("🔑 เปลี่ยนรหัสผ่าน"):
             st.session_state.step = "change_password"
             st.rerun()
-        
         st.divider()
         st.button("🚪 ออกจากระบบ", on_click=logout, use_container_width=True)
 
@@ -408,7 +377,6 @@ def display_dashboard():
     st.subheader(f"**{st.session_state.user}**")
 
     df_full = load_data()
-
     if not df_full.empty and 'วันที่' in df_full.columns:
         df_full_cleaned = df_full.dropna(subset=['วันที่'])
         if not df_full_cleaned.empty:
@@ -424,61 +392,63 @@ def display_dashboard():
 
     if summary.empty:
         st.info("ไม่พบข้อมูลการเข้า-ออกงานของคุณ")
-        return
-
-    st.markdown("### 🗓️ สรุปภาพรวม")
-    col1, col2, col3, col4 = st.columns(4)
-    col1.metric("ลาป่วย/ลากิจ (วัน)", summary["ลาป่วย/ลากิจ"].sum())
-    col2.metric("ขาดงาน (วัน)", summary["ขาด"].sum())
-    col3.metric("มาสาย (ครั้ง)", int(summary["สาย"].sum()))
-    col4.metric("วันพักผ่อน (วัน)", int(summary["พักผ่อน"].sum()))
-    st.divider()
-
-    st.markdown("### 📈 รายละเอียดและสถิติ")
-    summary_melted = summary.melt(
-        id_vars=["ชื่อ-สกุล"],
-        value_vars=["ลาป่วย/ลากิจ", "ขาด", "สาย", "พักผ่อน"],
-        var_name="ประเภท",
-        value_name="จำนวนวัน/ครั้ง"
-    )
-    chart = alt.Chart(summary_melted).mark_bar().encode(
-        x=alt.X('จำนวนวัน/ครั้ง:Q', title='จำนวน (วัน/ครั้ง)'),
-        y=alt.Y('ประเภท:N', title='ประเภท', sort='-x'),
-        color=alt.Color('ประเภท:N', 
-                         scale=alt.Scale(
-                             domain=['ลาป่วย/ลากิจ', 'ขาด', 'สาย', 'พักผ่อน'],
-                             range=['#FFC300', '#C70039', '#FF5733', '#33C1FF']
-                         ),
-                         legend=None),
-        tooltip=['ประเภท', 'จำนวนวัน/ครั้ง']
-    ).properties(title='กราฟเปรียบเทียบข้อมูล')
-    st.altair_chart(chart, use_container_width=True)
-
-    st.markdown("#### 📜 รายการวันที่")
-    leave_types_map = {
-        "ลาป่วย/ลากิจ": ["ลาป่วย", "ลากิจ", "ลาป่วยครึ่งวัน", "ลากิจครึ่งวัน"],
-        "ขาด": ["ขาด", "ขาดครึ่งวัน"],
-        "สาย": ["สาย"],
-        "พักผ่อน": ["พักผ่อน"]
-    }
-    
-    for leave_type, exceptions in leave_types_map.items():
-        dates_df = df_user[df_user["ข้อยกเว้น"].isin(exceptions)]
-        total_days = df_user[leave_type].sum()
-        if not dates_df.empty:
-            with st.expander(f"ดูวันที่ **{leave_type}** (รวม {total_days} วัน/ครั้ง)"):
-                for _, row in dates_df.sort_values(by="วันที่").iterrows():
-                    check_in_time = format_time(row.get('เข้างาน'))
-                    check_out_time = format_time(row.get('ออกงาน'))
-                    time_display = f' <span style="white-space: nowrap;">{check_in_time}-{check_out_time}</span>'
-                    st.markdown(
-                        f'<p style="font-size: 0.9rem; margin: 0;">- <b>{thai_date(row["วันที่"])}</b>{time_display} ({row["ข้อยกเว้น"]})</p>',
-                        unsafe_allow_html=True
-                    )
-    st.divider()
-    col1, col2, col3 = st.columns([1, 2, 1])
-    with col2:
+        # Ensure the user can still log out if no data is found
         st.button("🚪 ออกจากระบบ", on_click=logout, use_container_width=True, type="secondary")
+    else:
+        st.markdown("### 🗓️ สรุปภาพรวม")
+        col1, col2, col3, col4 = st.columns(4)
+        col1.metric("ลาป่วย/ลากิจ (วัน)", summary["ลาป่วย/ลากิจ"].sum())
+        col2.metric("ขาดงาน (วัน)", summary["ขาด"].sum())
+        col3.metric("มาสาย (ครั้ง)", int(summary["สาย"].sum()))
+        col4.metric("วันพักผ่อน (วัน)", int(summary["พักผ่อน"].sum()))
+        st.divider()
+
+        st.markdown("### 📈 รายละเอียดและสถิติ")
+        summary_melted = summary.melt(
+            id_vars=["ชื่อ-สกุล"],
+            value_vars=["ลาป่วย/ลากิจ", "ขาด", "สาย", "พักผ่อน"],
+            var_name="ประเภท",
+            value_name="จำนวนวัน/ครั้ง"
+        )
+        chart = alt.Chart(summary_melted).mark_bar().encode(
+            x=alt.X('จำนวนวัน/ครั้ง:Q', title='จำนวน (วัน/ครั้ง)'),
+            y=alt.Y('ประเภท:N', title='ประเภท', sort='-x'),
+            color=alt.Color('ประเภท:N', 
+                            scale=alt.Scale(
+                                domain=['ลาป่วย/ลากิจ', 'ขาด', 'สาย', 'พักผ่อน'],
+                                range=['#FFC300', '#C70039', '#FF5733', '#33C1FF']
+                            ),
+                            legend=None),
+            tooltip=['ประเภท', 'จำนวนวัน/ครั้ง']
+        ).properties(title='กราฟเปรียบเทียบข้อมูล')
+        st.altair_chart(chart, use_container_width=True)
+
+        st.markdown("#### 📜 รายการวันที่")
+        leave_types_map = {
+            "ลาป่วย/ลากิจ": ["ลาป่วย", "ลากิจ", "ลาป่วยครึ่งวัน", "ลากิจครึ่งวัน"],
+            "ขาด": ["ขาด", "ขาดครึ่งวัน"],
+            "สาย": ["สาย"],
+            "พักผ่อน": ["พักผ่อน"]
+        }
+        
+        for leave_type, exceptions in leave_types_map.items():
+            dates_df = df_user[df_user["ข้อยกเว้น"].isin(exceptions)]
+            total_days = df_user[leave_type].sum()
+            if not dates_df.empty:
+                with st.expander(f"ดูวันที่ **{leave_type}** (รวม {total_days} วัน/ครั้ง)"):
+                    for _, row in dates_df.sort_values(by="วันที่").iterrows():
+                        check_in_time = format_time(row.get('เข้างาน'))
+                        check_out_time = format_time(row.get('ออกงาน'))
+                        time_display = f' <span style="white-space: nowrap;">{check_in_time}-{check_out_time}</span>'
+                        st.markdown(
+                            f'<p style="font-size: 0.9rem; margin: 0;">- <b>{thai_date(row["วันที่"])}</b>{time_display} ({row["ข้อยกเว้น"]})</p>',
+                            unsafe_allow_html=True
+                        )
+        st.divider()
+        col1, col2, col3 = st.columns([1, 2, 1])
+        with col2:
+            st.button("🚪 ออกจากระบบ", on_click=logout, use_container_width=True, type="secondary")
+
 
 # -----------------------------
 # Main App Logic
