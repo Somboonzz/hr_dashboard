@@ -118,8 +118,9 @@ def process_user_data(df, user_name):
 # Initialize Firebase (run only once)
 if not firebase_admin._apps:
     try:
-        # Use the secrets directly as a dictionary
-        cred = credentials.Certificate(st.secrets["firebase"])
+        # Load the service account from secrets and convert to a dictionary
+        service_account_info = json.loads(st.secrets["firebase"])
+        cred = credentials.Certificate(service_account_info)
         firebase_admin.initialize_app(cred)
     except Exception as e:
         st.error(f"เกิดข้อผิดพลาดในการเชื่อมต่อ Firebase: {e}")
