@@ -140,7 +140,6 @@ if not firebase_admin._apps:
         st.info("กรุณาตรวจสอบว่าคุณได้ตั้งค่า `secrets` บน Streamlit Cloud อย่างถูกต้อง")
         st.stop()
 
-@st.cache_data(show_spinner="กำลังโหลดข้อมูลผู้ใช้...")
 def load_user_db():
     """Loads the user database from Firestore."""
     try:
@@ -168,12 +167,11 @@ if "step" not in st.session_state:
     st.session_state.step = "login"
     st.session_state.phone = ""
     st.session_state.user = ""
-    st.session_state.USERS_DB = load_user_db()
 
 def logout():
     """Clears the session state and returns to the login page."""
     for key in list(st.session_state.keys()):
-        if key != 'USERS_DB':
+        if key not in ['firebase_config_dict']:
             del st.session_state[key]
     st.session_state.step = "login"
     st.rerun()
@@ -184,6 +182,7 @@ def logout():
 
 def display_login_page():
     """Displays the login form."""
+    USERS_DB = load_user_db()
     st.title("📊 HR Dashboard")
     st.markdown("กรุณาเข้าสู่ระบบเพื่อดูข้อมูลการเข้า-ออกงานของคุณ")
 
@@ -205,8 +204,8 @@ def display_login_page():
             )
 
             if st.button("✅ เข้าสู่ระบบ", use_container_width=True, type="primary"):
-                if phone in st.session_state.USERS_DB:
-                    user_data = st.session_state.USERS_DB[phone]
+                if phone in USERS_DB:
+                    user_data = USERS_DB[phone]
                     # Check for both actual None and the string "null"
                     if user_data.get("password") is None or user_data.get("password") == "null":
                         st.session_state.phone = phone
@@ -229,6 +228,7 @@ def display_login_page():
                 
 def display_password_page(mode="set"):
     """Displays the page for setting or changing a password."""
+    USERS_DB = load_user_db()
     title_map = {"set": "ตั้งรหัสผ่านครั้งแรก", "change": "เปลี่ยนรหัสผ่าน"}
     title = title_map.get(mode, "จัดการรหัสผ่าน")
     st.title(f"🔑 {title}")
@@ -246,7 +246,7 @@ def display_password_page(mode="set"):
             confirm_password = st.text_input("ยืนยันรหัสผ่านใหม่", type="password")
 
             if st.button("💾 บันทึก", use_container_width=True, type="primary"):
-                user_data = st.session_state.USERS_DB[st.session_state.phone]
+                user_data = USERS_DB[st.session_state.phone]
                 
                 if mode == "change" and user_data.get("password") != current_password:
                     st.error("รหัสผ่านปัจจุบันไม่ถูกต้อง")
@@ -255,8 +255,8 @@ def display_password_page(mode="set"):
                 elif new_password != confirm_password:
                     st.error("รหัสผ่านใหม่และการยืนยันไม่ตรงกัน")
                 else:
-                    st.session_state.USERS_DB[st.session_state.phone]["password"] = new_password
-                    save_user_db(st.session_state.phone, st.session_state.USERS_DB[st.session_state.phone])
+                    user_data["password"] = new_password
+                    save_user_db(st.session_state.phone, user_data)
                     st.success("บันทึกรหัสผ่านใหม่เรียบร้อยแล้ว!")
                     if mode == "change":
                         st.session_state.step = "dashboard"
@@ -274,6 +274,7 @@ def display_password_page(mode="set"):
 
 def display_forgot_password_page():
     """Displays the page for password reset with admin verification."""
+    USERS_DB = load_user_db()
     st.title("🔒 ลืมรหัสผ่าน")
     st.markdown("กรุณาให้ผู้ดูแลระบบช่วยเหลือในการรีเซ็ตรหัสผ่าน")
 
@@ -298,15 +299,15 @@ def display_forgot_password_page():
             if st.button("💾 บันทึกรหัสผ่านใหม่", use_container_width=True, type="primary"):
                 # NOTE: This admin verification is hardcoded and not secure.
                 # For a real application, consider a more robust admin login or a secure token system.
-                if user_phone not in st.session_state.USERS_DB:
+                if user_phone not in USERS_DB:
                     st.error("ไม่พบเบอร์โทรศัพท์พนักงานนี้ในระบบ")
-                elif admin_phone not in st.session_state.USERS_DB or st.session_state.USERS_DB[admin_phone].get("password") != "admin":
+                elif admin_phone not in USERS_DB or USERS_DB[admin_phone].get("password") != "admin":
                     st.error("เบอร์โทรศัพท์ผู้ดูแลระบบหรือรหัสผ่านไม่ถูกต้อง")
                 elif not new_password or new_password != confirm_password:
                     st.error("รหัสผ่านใหม่และการยืนยันไม่ตรงกัน หรือเป็นค่าว่าง")
                 else:
-                    st.session_state.USERS_DB[user_phone]["password"] = new_password
-                    save_user_db(user_phone, st.session_state.USERS_DB[user_phone])
+                    USERS_DB[user_phone]["password"] = new_password
+                    save_user_db(user_phone, USERS_DB[user_phone])
                     st.success("ตั้งรหัสผ่านใหม่สำเร็จแล้ว! กรุณากลับไปหน้าล็อกอิน")
                     st.session_state.step = "login"
                     st.rerun()
