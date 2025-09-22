@@ -118,6 +118,7 @@ def process_user_data(df, user_name):
 # Initialize Firebase (run only once)
 if not firebase_admin._apps:
     try:
+        # Use the secrets directly as a dictionary
         cred = credentials.Certificate(st.secrets["firebase"])
         firebase_admin.initialize_app(cred)
     except Exception as e:
