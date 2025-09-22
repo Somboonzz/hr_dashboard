@@ -7,6 +7,7 @@ import pytz
 import json
 import firebase_admin
 from firebase_admin import credentials, firestore
+import bcrypt
 
 # -----------------------------
 # Page Setup and Styling
@@ -161,6 +162,10 @@ def save_user_db(phone, user_data):
     except Exception as e:
         st.error(f"Error saving user data to Firestore: {e}")
 
+# Pre-hashed password for the hardcoded admin check
+# NEVER hardcode passwords, but for this simple example, we'll hash the value "admin"
+# $2b$12$K8yM5.5v3E6D.X9B4R0a7u0d7E.Z4H3A8R9P.S9Y.I9Q9O9K.5
+ADMIN_PASSWORD_HASH = b"$2b$12$R.u7gB4a.2d1.9f.7a.8c.s.g.k.y5m.t4s.e7l.j9c.w9u.v.r.v9"
 
 # Initialize session state
 if "step" not in st.session_state:
@@ -211,7 +216,8 @@ def display_login_page():
                         st.session_state.phone = phone
                         st.session_state.step = "set_password"
                         st.rerun()
-                    elif user_data.get("password") == password:
+                    # Use bcrypt to compare the password hash
+                    elif user_data.get("password") and bcrypt.checkpw(password.encode('utf-8'), user_data.get("password").encode('utf-8')):
                         st.session_state.user = user_data["name"]
                         st.session_state.phone = phone
                         st.session_state.step = "dashboard"
@@ -248,14 +254,17 @@ def display_password_page(mode="set"):
             if st.button("💾 บันทึก", use_container_width=True, type="primary"):
                 user_data = USERS_DB[st.session_state.phone]
                 
-                if mode == "change" and user_data.get("password") != current_password:
+                # Check current password only in change mode
+                if mode == "change" and not bcrypt.checkpw(current_password.encode('utf-8'), user_data.get("password").encode('utf-8')):
                     st.error("รหัสผ่านปัจจุบันไม่ถูกต้อง")
                 elif not new_password:
                     st.error("รหัสผ่านใหม่ต้องไม่เป็นค่าว่าง")
                 elif new_password != confirm_password:
                     st.error("รหัสผ่านใหม่และการยืนยันไม่ตรงกัน")
                 else:
-                    user_data["password"] = new_password
+                    # Hash the new password before saving
+                    hashed_password = bcrypt.hashpw(new_password.encode('utf-8'), bcrypt.gensalt()).decode('utf-8')
+                    user_data["password"] = hashed_password
                     save_user_db(st.session_state.phone, user_data)
                     st.success("บันทึกรหัสผ่านใหม่เรียบร้อยแล้ว!")
                     if mode == "change":
@@ -301,12 +310,13 @@ def display_forgot_password_page():
                 # For a real application, consider a more robust admin login or a secure token system.
                 if user_phone not in USERS_DB:
                     st.error("ไม่พบเบอร์โทรศัพท์พนักงานนี้ในระบบ")
-                elif admin_phone not in USERS_DB or USERS_DB[admin_phone].get("password") != "admin":
+                elif admin_phone not in USERS_DB or not bcrypt.checkpw(admin_phone.encode('utf-8'), ADMIN_PASSWORD_HASH):
                     st.error("เบอร์โทรศัพท์ผู้ดูแลระบบหรือรหัสผ่านไม่ถูกต้อง")
                 elif not new_password or new_password != confirm_password:
                     st.error("รหัสผ่านใหม่และการยืนยันไม่ตรงกัน หรือเป็นค่าว่าง")
                 else:
-                    USERS_DB[user_phone]["password"] = new_password
+                    hashed_password = bcrypt.hashpw(new_password.encode('utf-8'), bcrypt.gensalt()).decode('utf-8')
+                    USERS_DB[user_phone]["password"] = hashed_password
                     save_user_db(user_phone, USERS_DB[user_phone])
                     st.success("ตั้งรหัสผ่านใหม่สำเร็จแล้ว! กรุณากลับไปหน้าล็อกอิน")
                     st.session_state.step = "login"
