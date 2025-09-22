@@ -1,14 +1,16 @@
 import streamlit as st
+import streamlit.components.v1 as components
 import pandas as pd
 import altair as alt
 import datetime
 import os
 import pytz
 import json
-import bcrypt
-import uuid
 import firebase_admin
 from firebase_admin import credentials, firestore
+import bcrypt
+import uuid
+import time
 
 # -----------------------------
 # Page Setup and Styling
@@ -19,47 +21,15 @@ st.set_page_config(
     layout="wide"
 )
 
-# Custom CSS for better styling
-st.markdown("""
-<style>
-    /* Hide default Streamlit UI */
-    #MainMenu, footer, header { visibility: hidden; }
-
-    /* General body styling */
-    body {
-        font-family: 'Inter', sans-serif;
-        background-color: #f0f2f6;
-    }
-    
-    /* Container styling */
-    .stContainer {
-        border-radius: 12px;
-        padding: 2rem;
-        box-shadow: 0 4px 6px rgba(0, 0, 0, 0.1);
-    }
-    
-    /* Buttons */
-    .stButton>button {
-        width: 100%;
-        border-radius: 8px;
-        border: 1px solid #ddd;
-        transition: all 0.3s ease-in-out;
-    }
-    .stButton>button:hover {
-        transform: translateY(-2px);
-        box-shadow: 0 4px 6px rgba(0, 0, 0, 0.1);
-    }
-
-    /* Expander styling */
-    .streamlit-expanderHeader {
-        background-color: #f8f9fa;
-        border-radius: 8px;
-        border: 1px solid #e9ecef;
-        padding: 0.5rem 1rem;
-        margin-bottom: 1rem;
-    }
-</style>
-""", unsafe_allow_html=True)
+# Hide default Streamlit UI
+hide_streamlit_style = """
+            <style>
+            #MainMenu {visibility: hidden;}
+            footer {visibility: hidden;}
+            header {visibility: hidden;}
+            </style>
+            """
+st.markdown(hide_streamlit_style, unsafe_allow_html=True)
 
 # -----------------------------
 # Timezone and Date Functions
@@ -70,36 +40,33 @@ def thai_date(dt):
     """Converts a datetime object to a Thai date string (Buddhist year)."""
     if pd.isna(dt):
         return "N/A"
-    # Ensure dt is a datetime object before converting
-    if isinstance(dt, pd.Timestamp):
-        return dt.strftime(f"%d/%m/{dt.year + 543}")
-    return dt
+    return dt.strftime(f"%d/%m/{dt.year + 543}")
 
 def format_time(dt):
     """Converts a datetime object to a time string (HH:MM)."""
     if pd.isna(dt) or (isinstance(dt, datetime.time) and dt == datetime.time(0, 0)):
         return "00:00"
-    if isinstance(dt, datetime.time):
-        return dt.strftime("%H:%M")
-    return dt
+    return dt.strftime("%H:%M")
 
 # -----------------------------
 # Data Handling
 # -----------------------------
 @st.cache_data
-def load_data(uploaded_file):
-    """Loads data from an Excel or CSV file content and returns a DataFrame."""
+def load_data(file_path="attendances.xlsx"):
+    """Loads data from an Excel or CSV file and returns a DataFrame."""
+    file_extension = os.path.splitext(file_path)[1].lower()
+    
+    if not os.path.exists(file_path):
+        st.warning(f"❌ Data file not found: {file_path}")
+        return pd.DataFrame()
+
     try:
-        file_extension = os.path.splitext(uploaded_file.name)[1].lower()
-        
         if file_extension in ['.xlsx', '.xls']:
-            # Read from the file-like object directly
-            df = pd.read_excel(uploaded_file, engine='openpyxl')
+            df = pd.read_excel(file_path, engine='openpyxl')
         elif file_extension == '.csv':
-            # Read from the file-like object directly
-            df = pd.read_csv(uploaded_file)
+            df = pd.read_csv(file_path)
         else:
-            st.error(f"ไม่รองรับไฟล์ประเภทนี้: {file_extension}")
+            st.error(f"Unsupported file format: {file_extension}")
             return pd.DataFrame()
         
         # Data cleaning and type conversion
@@ -111,10 +78,10 @@ def load_data(uploaded_file):
         if 'ออกงาน' in df.columns:
             df['ออกงาน'] = df['ออกงาน'].replace('-', None)
             df['ออกงาน'] = pd.to_datetime(df['ออกงาน'], format='%H:%M:%S', errors='coerce').dt.time
-        
+
         return df
     except Exception as e:
-        st.error(f"เกิดข้อผิดพลาดในการอ่านไฟล์: {e}")
+        st.error(f"Error reading file: {e}")
         return pd.DataFrame()
 
 def process_user_data(df, user_name):
@@ -154,18 +121,13 @@ def process_user_data(df, user_name):
 # -----------------------------
 if not firebase_admin._apps:
     try:
-        if "firebase" in st.secrets:
-            service_account_info = dict(st.secrets["firebase"])
-        else:
-            # Fallback for local development
-            with open("firebase_config.json") as f:
-                service_account_info = json.load(f)
-        
-        cred = credentials.Certificate(service_account_info)
+        service_account_info = st.secrets["firebase"]
+        firebase_config_dict = dict(service_account_info)
+        cred = credentials.Certificate(firebase_config_dict)
         firebase_admin.initialize_app(cred)
     except Exception as e:
         st.error(f"เกิดข้อผิดพลาดในการเชื่อมต่อ Firebase: {e}")
-        st.info("กรุณาตรวจสอบการตั้งค่า `secrets` หรือไฟล์ `firebase_config.json`")
+        st.info("กรุณาตรวจสอบว่าคุณได้ตั้งค่า `secrets` บน Streamlit Cloud อย่างถูกต้อง")
         st.stop()
 
 @st.cache_data(ttl=600)
@@ -204,13 +166,6 @@ def delete_session(session_id):
         db = firestore.client()
         db.collection("sessions").document(session_id).delete()
 
-def logout():
-    """Clears the session state and returns to the login page."""
-    if st.session_state.get("session_id"):
-        delete_session(st.session_state.session_id)
-    st.session_state.clear()
-    st.rerun()
-
 def check_session(session_id):
     """Checks for a valid session in Firestore."""
     if not session_id:
@@ -222,16 +177,66 @@ def check_session(session_id):
         user_phone = session_doc.to_dict()["user_phone"]
         USERS_DB = load_user_db()
         if user_phone in USERS_DB:
-            user_data = USERS_DB[user_phone]
-            user_data["phone"] = user_phone
-            return user_data
+            return USERS_DB[user_phone]
     return None
 
+def logout():
+    """Clears the session state and returns to the login page."""
+    # This JS will clear the session ID from local storage
+    components.html(
+        """
+        <script>
+            localStorage.removeItem('session_id');
+            setTimeout(() => {
+                window.parent.postMessage({ type: 'streamlit:rerun' }, '*');
+            }, 100);
+        </script>
+        """,
+        height=0
+    )
+    # The Python part to clear the state and delete from DB
+    delete_session(st.session_state.get("session_id"))
+    for key in list(st.session_state.keys()):
+        del st.session_state[key]
+    st.rerun()
+
 # -----------------------------
-# App Pages
+# Session Management using Local Storage
 # -----------------------------
+
+# Inject JavaScript to get/set session ID from Local Storage
+# The value is passed back to Python via a hidden Streamlit text_input
+components.html(
+    """
+    <script>
+    const sessionId = localStorage.getItem('session_id');
+    const inputElement = window.parent.document.querySelector('input[type="text"][data-testid="stTextInput"]');
+
+    if (inputElement) {
+        inputElement.value = sessionId || '';
+        inputElement.dispatchEvent(new Event('change'));
+    }
+
+    window.addEventListener('message', (event) => {
+        if (event.data.type === 'saveSession' && event.data.sessionId) {
+            localStorage.setItem('session_id', event.data.sessionId);
+        } else if (event.data.type === 'clearSession') {
+            localStorage.removeItem('session_id');
+        }
+    });
+    </script>
+    <input type="text" id="session_id_input" style="display:none;">
+    """,
+    height=0,
+)
+session_id_input = st.text_input("Hidden Session ID", value="", key="session_id_hidden", label_visibility="hidden")
+
+# -----------------------------
+# UI Display Functions
+# -----------------------------
+
 def display_login_page():
-    """Displays the login page."""
+    """Displays the login form."""
     USERS_DB = load_user_db()
     st.title("📊 HR Dashboard")
     st.markdown("กรุณาเข้าสู่ระบบเพื่อดูข้อมูลการเข้า-ออกงานของคุณ")
@@ -243,7 +248,8 @@ def display_login_page():
             phone = st.text_input(
                 "เบอร์โทรศัพท์",
                 placeholder="กรอกเบอร์โทรศัพท์ 10 หลัก",
-                max_chars=10
+                max_chars=10,
+                value=st.session_state.get("phone", "")
             )
             password = st.text_input(
                 "รหัสผ่าน",
@@ -255,15 +261,25 @@ def display_login_page():
                 if phone in USERS_DB:
                     user_data = USERS_DB[phone]
                     if user_data.get("password") in ["null", None, ""]:
-                        st.session_state.phone_to_set = phone
+                        st.session_state.phone = phone
                         st.session_state.step = "set_password"
                         st.rerun()
                     elif user_data.get("password") and bcrypt.checkpw(password.encode('utf-8'), user_data.get("password").encode('utf-8')):
                         st.session_state.user = user_data["name"]
                         st.session_state.phone = phone
                         session_id = create_session(phone)
+                        
+                        # Save session ID to browser's local storage via JS
+                        components.html(f"""
+                            <script>
+                                localStorage.setItem('session_id', '{session_id}');
+                            </script>
+                            """, height=0)
+                        
                         st.session_state.session_id = session_id
                         st.session_state.step = "dashboard"
+                        st.success("เข้าสู่ระบบสำเร็จ!")
+                        time.sleep(1) # Give JS time to save before rerun
                         st.rerun()
                     else:
                         st.error("รหัสผ่านไม่ถูกต้อง")
@@ -274,32 +290,30 @@ def display_login_page():
             if st.button("🔒 ลืมรหัสผ่าน", use_container_width=True):
                 st.session_state.step = "forgot_password"
                 st.rerun()
-
-def password_form(mode):
-    """Displays password change/set form."""
+                
+def display_password_page(mode="set"):
+    """Displays the page for setting or changing a password."""
     USERS_DB = load_user_db()
-    is_set_mode = mode == "set"
-    
-    st.title(f"🔑 {'ตั้งรหัสผ่านครั้งแรก' if is_set_mode else 'เปลี่ยนรหัสผ่าน'}")
-    
+    title_map = {"set": "ตั้งรหัสผ่านครั้งแรก", "change": "เปลี่ยนรหัสผ่าน"}
+    title = title_map.get(mode, "จัดการรหัสผ่าน")
+    st.title(f"🔑 {title}")
+
     col1, col2, col3 = st.columns([1, 1.5, 1])
     with col2:
         with st.container(border=True):
-            st.markdown(f"#### <div style='text-align: center;'>{'ตั้งรหัสผ่านครั้งแรก' if is_set_mode else 'เปลี่ยนรหัสผ่าน'}</div>", unsafe_allow_html=True)
-            
-            phone_target = st.session_state.phone_to_set if is_set_mode else st.session_state.phone
-            st.info(f"สำหรับเบอร์โทรศัพท์: {phone_target}")
+            st.markdown(f"#### <div style='text-align: center;'>{title}</div>", unsafe_allow_html=True)
+            st.info(f"สำหรับเบอร์โทรศัพท์: {st.session_state.phone}")
 
-            if not is_set_mode:
+            if mode == "change":
                 current_password = st.text_input("รหัสผ่านปัจจุบัน", type="password")
-
+            
             new_password = st.text_input("รหัสผ่านใหม่", type="password")
             confirm_password = st.text_input("ยืนยันรหัสผ่านใหม่", type="password")
 
             if st.button("💾 บันทึก", use_container_width=True, type="primary"):
-                user_data = USERS_DB[phone_target]
+                user_data = USERS_DB[st.session_state.phone]
                 
-                if not is_set_mode and not bcrypt.checkpw(current_password.encode('utf-8'), user_data.get("password", "").encode('utf-8')):
+                if mode == "change" and not bcrypt.checkpw(current_password.encode('utf-8'), user_data.get("password", "").encode('utf-8')):
                     st.error("รหัสผ่านปัจจุบันไม่ถูกต้อง")
                 elif not new_password:
                     st.error("รหัสผ่านใหม่ต้องไม่เป็นค่าว่าง")
@@ -308,17 +322,25 @@ def password_form(mode):
                 else:
                     hashed_password = bcrypt.hashpw(new_password.encode('utf-8'), bcrypt.gensalt()).decode('utf-8')
                     user_data["password"] = hashed_password
-                    save_user_db(phone_target, user_data)
+                    save_user_db(st.session_state.phone, user_data)
                     st.success("บันทึกรหัสผ่านใหม่เรียบร้อยแล้ว!")
-                    st.session_state.step = "login" if is_set_mode else "dashboard"
+                    if mode == "change":
+                        st.session_state.step = "dashboard"
+                    else:
+                        st.session_state.step = "login"
                     st.rerun()
-            
-            if st.button(f"⬅️ กลับไปหน้า{'ล็อกอิน' if is_set_mode else 'แดชบอร์ด'}", use_container_width=True):
-                st.session_state.step = "login" if is_set_mode else "dashboard"
-                st.rerun()
+                
+            if mode == "set":
+                if st.button("⬅️ กลับไปหน้าล็อกอิน", use_container_width=True):
+                    st.session_state.step = "login"
+                    st.rerun()
+            else:
+                if st.button("⬅️ กลับไปหน้าแดชบอร์ด", use_container_width=True):
+                    st.session_state.step = "dashboard"
+                    st.rerun()
 
 def display_forgot_password_page():
-    """Displays the forgot password page for admin use."""
+    """Displays the page for password reset with admin verification."""
     USERS_DB = load_user_db()
     st.title("🔒 ลืมรหัสผ่าน")
     st.markdown("กรุณาให้ผู้ดูแลระบบช่วยเหลือในการรีเซ็ตรหัสผ่าน")
@@ -327,11 +349,23 @@ def display_forgot_password_page():
     with col2:
         with st.container(border=True):
             st.markdown("#### <div style='text-align: center;'>รีเซ็ตรหัสผ่าน</div>", unsafe_allow_html=True)
-            user_phone = st.text_input("เบอร์โทรศัพท์พนักงานที่ลืมรหัส", placeholder="กรอกเบอร์โทรศัพท์ 10 หลัก", max_chars=10)
-            admin_phone = st.text_input("เบอร์โทรศัพท์ผู้ดูแลระบบ", placeholder="กรอกเบอร์โทรศัพท์ผู้ดูแลระบบ", max_chars=10)
-            admin_password = st.text_input("รหัสผ่านผู้ดูแลระบบ", type="password", placeholder="กรอกรหัสผ่านผู้ดูแลระบบ")
-            new_password = st.text_input("รหัสผ่านใหม่", type="password")
-            confirm_password = st.text_input("ยืนยันรหัสผ่านใหม่", type="password")
+            user_phone = st.text_input(
+                "เบอร์โทรศัพท์พนักงานที่ลืมรหัส", 
+                placeholder="กรอกเบอร์โทรศัพท์ 10 หลัก", 
+                max_chars=10
+            )
+            admin_phone = st.text_input(
+                "เบอร์โทรศัพท์ผู้ดูแลระบบ", 
+                placeholder="กรอกเบอร์โทรศัพท์ผู้ดูแลระบบ", 
+                max_chars=10
+            )
+            admin_password = st.text_input(
+                "รหัสผ่านผู้ดูแลระบบ", 
+                type="password",
+                placeholder="กรอกรหัสผ่านผู้ดูแลระบบ"
+            )
+            new_password = st.text_input("รหัสผ่านใหม่", type="password", key="new_password")
+            confirm_password = st.text_input("ยืนยันรหัสผ่านใหม่", type="password", key="confirm_new_password")
 
             if st.button("💾 บันทึกรหัสผ่านใหม่", use_container_width=True, type="primary"):
                 if user_phone not in USERS_DB:
@@ -352,32 +386,29 @@ def display_forgot_password_page():
                         st.session_state.step = "login"
                         st.rerun()
 
-            if st.button("⬅️ กลับไปหน้าล็อกอิน", use_container_width=True):
-                st.session_state.step = "login"
-                st.rerun()
+    if st.button("⬅️ กลับไปหน้าล็อกอิน", use_container_width=True):
+        st.session_state.step = "login"
+        st.rerun()
 
 def display_dashboard():
-    """Displays the main dashboard page."""
+    """Displays the user's dashboard."""
+    
     with st.sidebar:
         st.header("เมนู")
         st.info(f"ยินดีต้อนรับ,\n**{st.session_state.user}**")
-        st.file_uploader("อัปโหลดไฟล์ข้อมูล (Excel/CSV)", type=['xlsx', 'xls', 'csv'], key="data_file", on_change=lambda: st.cache_data.clear())
+        
         if st.button("🔑 เปลี่ยนรหัสผ่าน"):
             st.session_state.step = "change_password"
             st.rerun()
+        
         st.divider()
         st.button("🚪 ออกจากระบบ", on_click=logout, use_container_width=True)
 
     st.header("📊 แดชบอร์ดสรุปข้อมูล")
     st.subheader(f"**{st.session_state.user}**")
 
-    # Load data from the uploaded file
-    uploaded_file = st.session_state.get("data_file")
-    if uploaded_file is None:
-        st.warning("กรุณาอัปโหลดไฟล์ข้อมูลเพื่อดูแดชบอร์ด")
-        return
-        
-    df_full = load_data(uploaded_file)
+    df_full = load_data()
+
     if not df_full.empty and 'วันที่' in df_full.columns:
         df_full_cleaned = df_full.dropna(subset=['วันที่'])
         if not df_full_cleaned.empty:
@@ -392,57 +423,58 @@ def display_dashboard():
     df_user, summary = process_user_data(df_full, st.session_state.user)
 
     if summary.empty:
-        st.info("ไม่พบข้อมูลการเข้า-ออกงานของคุณในไฟล์ที่อัปโหลด")
-    else:
-        st.markdown("### 🗓️ สรุปภาพรวม")
-        col1, col2, col3, col4 = st.columns(4)
-        col1.metric("ลาป่วย/ลากิจ (วัน)", summary["ลาป่วย/ลากิจ"].sum())
-        col2.metric("ขาดงาน (วัน)", summary["ขาด"].sum())
-        col3.metric("มาสาย (ครั้ง)", int(summary["สาย"].sum()))
-        col4.metric("วันพักผ่อน (วัน)", int(summary["พักผ่อน"].sum()))
-        st.divider()
+        st.info("ไม่พบข้อมูลการเข้า-ออกงานของคุณ")
+        return
 
-        st.markdown("### 📈 รายละเอียดและสถิติ")
-        summary_melted = summary.melt(
-            id_vars=["ชื่อ-สกุล"],
-            value_vars=["ลาป่วย/ลากิจ", "ขาด", "สาย", "พักผ่อน"],
-            var_name="ประเภท",
-            value_name="จำนวนวัน/ครั้ง"
-        )
-        chart = alt.Chart(summary_melted).mark_bar().encode(
-            x=alt.X('จำนวนวัน/ครั้ง:Q', title='จำนวน (วัน/ครั้ง)'),
-            y=alt.Y('ประเภท:N', title='ประเภท', sort='-x'),
-            color=alt.Color('ประเภท:N', 
-                            scale=alt.Scale(
-                                domain=['ลาป่วย/ลากิจ', 'ขาด', 'สาย', 'พักผ่อน'],
-                                range=['#FFC300', '#C70039', '#FF5733', '#33C1FF']
-                            ),
-                            legend=None),
-            tooltip=['ประเภท', 'จำนวนวัน/ครั้ง']
-        ).properties(title='กราฟเปรียบเทียบข้อมูล')
-        st.altair_chart(chart, use_container_width=True)
+    st.markdown("### 🗓️ สรุปภาพรวม")
+    col1, col2, col3, col4 = st.columns(4)
+    col1.metric("ลาป่วย/ลากิจ (วัน)", summary["ลาป่วย/ลากิจ"].sum())
+    col2.metric("ขาดงาน (วัน)", summary["ขาด"].sum())
+    col3.metric("มาสาย (ครั้ง)", int(summary["สาย"].sum()))
+    col4.metric("วันพักผ่อน (วัน)", int(summary["พักผ่อน"].sum()))
+    st.divider()
 
-        st.markdown("#### 📜 รายการวันที่")
-        leave_types_map = {
-            "ลาป่วย/ลากิจ": ["ลาป่วย", "ลากิจ", "ลาป่วยครึ่งวัน", "ลากิจครึ่งวัน"],
-            "ขาด": ["ขาด", "ขาดครึ่งวัน"],
-            "สาย": ["สาย"],
-            "พักผ่อน": ["พักผ่อน"]
-        }
-        
-        for leave_type, exceptions in leave_types_map.items():
-            dates_df = df_user[df_user["ข้อยกเว้น"].isin(exceptions)]
-            total_days = df_user[leave_type].sum()
-            if not dates_df.empty:
-                with st.expander(f"ดูวันที่ **{leave_type}** (รวม {total_days} วัน/ครั้ง)"):
-                    for _, row in dates_df.sort_values(by="วันที่").iterrows():
-                        check_in_time = format_time(row.get('เข้างาน'))
-                        check_out_time = format_time(row.get('ออกงาน'))
-                        time_display = f' <span style="white-space: nowrap;">{check_in_time}-{check_out_time}</span>'
-                        st.markdown(
-                            f'<p style="font-size: 0.9rem; margin: 0;">- <b>{thai_date(row["วันที่"])}</b>{time_display} ({row["ข้อยกเว้น"]})</p>',
-                            unsafe_allow_html=True
-                        )
+    st.markdown("### 📈 รายละเอียดและสถิติ")
+    summary_melted = summary.melt(
+        id_vars=["ชื่อ-สกุล"],
+        value_vars=["ลาป่วย/ลากิจ", "ขาด", "สาย", "พักผ่อน"],
+        var_name="ประเภท",
+        value_name="จำนวนวัน/ครั้ง"
+    )
+    chart = alt.Chart(summary_melted).mark_bar().encode(
+        x=alt.X('จำนวนวัน/ครั้ง:Q', title='จำนวน (วัน/ครั้ง)'),
+        y=alt.Y('ประเภท:N', title='ประเภท', sort='-x'),
+        color=alt.Color('ประเภท:N', 
+                         scale=alt.Scale(
+                             domain=['ลาป่วย/ลากิจ', 'ขาด', 'สาย', 'พักผ่อน'],
+                             range=['#FFC300', '#C70039', '#FF5733', '#33C1FF']
+                         ),
+                         legend=None),
+        tooltip=['ประเภท', 'จำนวนวัน/ครั้ง']
+    ).properties(title='กราฟเปรียบเทียบข้อมูล')
+    st.altair_chart(chart, use_container_width=True)
+
+    st.markdown("#### 📜 รายการวันที่")
+    leave_types_map = {
+        "ลาป่วย/ลากิจ": ["ลาป่วย", "ลากิจ", "ลาป่วยครึ่งวัน", "ลากิจครึ่งวัน"],
+        "ขาด": ["ขาด", "ขาดครึ่งวัน"],
+        "สาย": ["สาย"],
+        "พักผ่อน": ["พักผ่อน"]
+    }
+    
+    for leave_type, exceptions in leave_types_map.items():
+        dates_df = df_user[df_user["ข้อยกเว้น"].isin(exceptions)]
+        total_days = df_user[leave_type].sum()
+        if not dates_df.empty:
+            with st.expander(f"ดูวันที่ **{leave_type}** (รวม {total_days} วัน/ครั้ง)"):
+                for _, row in dates_df.sort_values(by="วันที่").iterrows():
+                    check_in_time = format_time(row.get('เข้างาน'))
+                    check_out_time = format_time(row.get('ออกงาน'))
+                    time_display = f' <span style="white-space: nowrap;">{check_in_time}-{check_out_time}</span>'
+                    st.markdown(
+                        f'<p style="font-size: 0.9rem; margin: 0;">- <b>{thai_date(row["วันที่"])}</b>{time_display} ({row["ข้อยกเว้น"]})</p>',
+                        unsafe_allow_html=True
+                    )
     st.divider()
     col1, col2, col3 = st.columns([1, 2, 1])
     with col2:
@@ -454,13 +486,22 @@ def display_dashboard():
 if "step" not in st.session_state:
     st.session_state.step = "login"
 
-# State machine for navigation
+# Check if there's a valid session from local storage on every rerun
+session_id_from_local_storage = st.session_state.get("session_id_hidden")
+if session_id_from_local_storage:
+    user_data = check_session(session_id_from_local_storage)
+    if user_data:
+        st.session_state.user = user_data["name"]
+        st.session_state.phone = user_data["phone"]
+        st.session_state.session_id = session_id_from_local_storage
+        st.session_state.step = "dashboard"
+
 if st.session_state.step == "login":
     display_login_page()
 elif st.session_state.step == "set_password":
-    password_form(mode="set")
+    display_password_page(mode="set")
 elif st.session_state.step == "change_password":
-    password_form(mode="change")
+    display_password_page(mode="change")
 elif st.session_state.step == "forgot_password":
     display_forgot_password_page()
 elif st.session_state.step == "dashboard":
