@@ -193,7 +193,8 @@ def display_login_page():
             if st.button("✅ เข้าสู่ระบบ", use_container_width=True, type="primary"):
                 if phone in st.session_state.USERS_DB:
                     user_data = st.session_state.USERS_DB[phone]
-                    if user_data.get("password") is None:
+                    # Check for both actual None and the string "null"
+                    if user_data.get("password") is None or user_data.get("password") == "null":
                         st.session_state.phone = phone
                         st.session_state.step = "set_password"
                         st.rerun()
