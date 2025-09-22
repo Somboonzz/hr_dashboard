@@ -6,7 +6,7 @@ import os
 import pytz
 import json
 import firebase_admin
-from firebase_admin import credentials, firestore
+from firebase_admin import credentials, firestore  #1234567890
 
 # -----------------------------
 # Page Setup and Styling
@@ -118,8 +118,8 @@ def process_user_data(df, user_name):
 # Initialize Firebase (run only once)
 if not firebase_admin._apps:
     try:
-        # Load the service account from secrets and convert to a dictionary
-        service_account_info = json.loads(st.secrets["firebase"])
+        # Load the service account from secrets. Streamlit automatically parses it.
+        service_account_info = st.secrets["firebase"]
         cred = credentials.Certificate(service_account_info)
         firebase_admin.initialize_app(cred)
     except Exception as e:
