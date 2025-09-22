@@ -6,3 +6,8 @@ git config --global alias.pushall "!f() { \
   git pull origin main --rebase; \
   git push origin main; \
 }; f"
+
+git pushall
+
+
+
