@@ -211,8 +211,8 @@ def display_login_page():
             if st.button("✅ เข้าสู่ระบบ", use_container_width=True, type="primary"):
                 if phone in USERS_DB:
                     user_data = USERS_DB[phone]
-                    # Check for "null" string value or None before proceeding
-                    if user_data.get("password") in ["null", None]:
+                    # Check for "null" string, None, or empty string before proceeding
+                    if user_data.get("password") in ["null", None, ""]:
                         st.session_state.phone = phone
                         st.session_state.step = "set_password"
                         st.rerun()
@@ -411,7 +411,6 @@ def display_dashboard():
                         f'<p style="font-size: 0.9rem; margin: 0;">- <b>{thai_date(row["วันที่"])}</b>{time_display} ({row["ข้อยกเว้น"]})</p>',
                         unsafe_allow_html=True
                     )
-
 
 # -----------------------------
 # Main App Logic
