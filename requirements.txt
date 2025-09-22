@@ -4,3 +4,4 @@ altair
 pytz
 openpyxl
 firebase-admin
+bcrypt  
