@@ -85,7 +85,14 @@ def process_user_data(df, user_name):
     if df.empty or "ชื่อ-สกุล" not in df.columns:
         return pd.DataFrame(), pd.DataFrame()
 
-    df_user = df[df["ชื่อ-สกุล"] == user_name].copy()
+    # Normalize user name from Firebase
+    normalized_user_name = user_name.strip().lower()
+
+    # Normalize names in the DataFrame for comparison
+    df["ชื่อ-สกุล_normalized"] = df["ชื่อ-สกุล"].astype(str).str.strip().str.lower()
+    
+    # Filter the DataFrame using the normalized names
+    df_user = df[df["ชื่อ-สกุล_normalized"] == normalized_user_name].copy()
     if df_user.empty:
         return pd.DataFrame(), pd.DataFrame()
 
