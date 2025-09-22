@@ -162,11 +162,6 @@ def save_user_db(phone, user_data):
     except Exception as e:
         st.error(f"Error saving user data to Firestore: {e}")
 
-# Pre-hashed password for the hardcoded admin check
-# NEVER hardcode passwords, but for this simple example, we'll hash the value "admin"
-# $2b$12$K8yM5.5v3E6D.X9B4R0a7u0d7E.Z4H3A8R9P.S9Y.I9Q9O9K.5
-ADMIN_PASSWORD_HASH = b"$2b$12$R.u7gB4a.2d1.9f.7a.8c.s.g.k.y5m.t4s.e7l.j9c.w9u.v.r.v9"
-
 # Initialize session state
 if "step" not in st.session_state:
     st.session_state.step = "login"
@@ -302,25 +297,36 @@ def display_forgot_password_page():
                 placeholder="กรอกเบอร์โทรศัพท์ผู้ดูแลระบบ", 
                 max_chars=10
             )
+            admin_password = st.text_input(
+                "รหัสผ่านผู้ดูแลระบบ", 
+                type="password",
+                placeholder="กรอกรหัสผ่านผู้ดูแลระบบ"
+            )
             new_password = st.text_input("รหัสผ่านใหม่", type="password", key="new_password")
             confirm_password = st.text_input("ยืนยันรหัสผ่านใหม่", type="password", key="confirm_new_password")
 
             if st.button("💾 บันทึกรหัสผ่านใหม่", use_container_width=True, type="primary"):
-                # NOTE: This admin verification is hardcoded and not secure.
-                # For a real application, consider a more robust admin login or a secure token system.
+                # Check if the user to be reset exists
                 if user_phone not in USERS_DB:
                     st.error("ไม่พบเบอร์โทรศัพท์พนักงานนี้ในระบบ")
-                elif admin_phone not in USERS_DB or not bcrypt.checkpw(admin_phone.encode('utf-8'), ADMIN_PASSWORD_HASH):
-                    st.error("เบอร์โทรศัพท์ผู้ดูแลระบบหรือรหัสผ่านไม่ถูกต้อง")
-                elif not new_password or new_password != confirm_password:
-                    st.error("รหัสผ่านใหม่และการยืนยันไม่ตรงกัน หรือเป็นค่าว่าง")
+                # Check if the admin exists and get their data
+                elif admin_phone not in USERS_DB:
+                    st.error("ไม่พบเบอร์โทรศัพท์ผู้ดูแลระบบในระบบ")
                 else:
-                    hashed_password = bcrypt.hashpw(new_password.encode('utf-8'), bcrypt.gensalt()).decode('utf-8')
-                    USERS_DB[user_phone]["password"] = hashed_password
-                    save_user_db(user_phone, USERS_DB[user_phone])
-                    st.success("ตั้งรหัสผ่านใหม่สำเร็จแล้ว! กรุณากลับไปหน้าล็อกอิน")
-                    st.session_state.step = "login"
-                    st.rerun()
+                    admin_data = USERS_DB[admin_phone]
+                    # Check admin password
+                    if not bcrypt.checkpw(admin_password.encode('utf-8'), admin_data.get("password", "").encode('utf-8')):
+                        st.error("รหัสผ่านผู้ดูแลระบบไม่ถูกต้อง")
+                    # Validate new password
+                    elif not new_password or new_password != confirm_password:
+                        st.error("รหัสผ่านใหม่และการยืนยันไม่ตรงกัน หรือเป็นค่าว่าง")
+                    else:
+                        hashed_password = bcrypt.hashpw(new_password.encode('utf-8'), bcrypt.gensalt()).decode('utf-8')
+                        USERS_DB[user_phone]["password"] = hashed_password
+                        save_user_db(user_phone, USERS_DB[user_phone])
+                        st.success("ตั้งรหัสผ่านใหม่สำเร็จแล้ว! กรุณากลับไปหน้าล็อกอิน")
+                        st.session_state.step = "login"
+                        st.rerun()
 
     if st.button("⬅️ กลับไปหน้าล็อกอิน", use_container_width=True):
         logout()
@@ -411,19 +417,3 @@ def display_dashboard():
                         f'<p style="font-size: 0.9rem; margin: 0;">- <b>{thai_date(row["วันที่"])}</b>{time_display} ({row["ข้อยกเว้น"]})</p>',
                         unsafe_allow_html=True
                     )
-
-# -----------------------------
-# Main App Logic
-# -----------------------------
-if st.session_state.step == "login":
-    display_login_page()
-elif st.session_state.step == "set_password":
-    display_password_page(mode="set")
-elif st.session_state.step == "change_password":
-    display_password_page(mode="change")
-elif st.session_state.step == "forgot_password":
-    display_forgot_password_page()
-elif st.session_state.step == "dashboard":
-    display_dashboard()
-else:
-    display_login_page()
