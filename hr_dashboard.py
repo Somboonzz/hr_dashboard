@@ -319,9 +319,7 @@ def display_forgot_password_page():
 
 def display_dashboard():
     """Displays the user's dashboard."""
-    # Add a top-level logout button for better mobile access
-    st.button("🚪 ออกจากระบบ", on_click=logout, type="secondary")
-
+    
     with st.sidebar:
         st.header("เมนู")
         st.info(f"ยินดีต้อนรับ,\n**{st.session_state.user}**")
@@ -406,6 +404,11 @@ def display_dashboard():
                         f'<p style="font-size: 0.9rem; margin: 0;">- <b>{thai_date(row["วันที่"])}</b>{time_display} ({row["ข้อยกเว้น"]})</p>',
                         unsafe_allow_html=True
                     )
+
+    st.divider()
+    col1, col2, col3 = st.columns([1, 2, 1])
+    with col2:
+        st.button("🚪 ออกจากระบบ", on_click=logout, use_container_width=True, type="secondary")
 
 # -----------------------------
 # Main App Logic
