@@ -5,3 +5,4 @@ pytz
 openpyxl
 firebase-admin
 bcrypt  
+streamlit-js-eval
