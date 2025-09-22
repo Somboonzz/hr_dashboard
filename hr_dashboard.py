@@ -6,7 +6,7 @@ import os
 import pytz
 import json
 import firebase_admin
-from firebase_admin import credentials, firestore 
+from firebase_admin import credentials, firestore
 
 # -----------------------------
 # Page Setup and Styling
@@ -118,9 +118,15 @@ def process_user_data(df, user_name):
 # Initialize Firebase (run only once)
 if not firebase_admin._apps:
     try:
-        # Load the service account from secrets. Streamlit automatically parses it.
+        # Load the secrets object from Streamlit
         service_account_info = st.secrets["firebase"]
-        cred = credentials.Certificate(service_account_info)
+        
+        # Convert the Streamlit object to a standard Python dictionary
+        # This is a robust way to handle the object from st.secrets
+        firebase_config_dict = dict(service_account_info)
+        
+        # Now pass the standard dictionary to credentials.Certificate
+        cred = credentials.Certificate(firebase_config_dict)
         firebase_admin.initialize_app(cred)
     except Exception as e:
         st.error(f"เกิดข้อผิดพลาดในการเชื่อมต่อ Firebase: {e}")
