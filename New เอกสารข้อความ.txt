@@ -163,12 +163,8 @@ def create_session(user_phone):
 def delete_session(session_id):
     """Deletes the current session from Firestore."""
     if session_id:
-        try:
-            db = firestore.client()
-            db.collection("sessions").document(session_id).delete()
-        except Exception as e:
-            st.warning(f"Could not delete session {session_id}: {e}")
-
+        db = firestore.client()
+        db.collection("sessions").document(session_id).delete()
 
 def check_session(session_id):
     """Checks for a valid session in Firestore."""
@@ -185,26 +181,12 @@ def check_session(session_id):
     return None
 
 def logout():
-    """Initiates the logout process by clearing client-side storage and stopping the script."""
-    session_id = st.session_state.get("session_id")
-    if session_id:
-        delete_session(session_id)
-
-    # This JS will clear the session ID from local storage and reload the page.
-    # The Python session state will be naturally cleared upon reload.
+    """Clears the session state and returns to the login page."""
+    # This JS will clear the session ID from local storage
     components.html(
-        """
-        <script>
-            localStorage.removeItem('session_id');
-            window.parent.location.href = window.parent.location.pathname;
-        </script>
-        """,
-        height=0,
-    )
-    # Stop the current script run to prevent re-rendering the old page
-    # before the browser reloads.
-    st.stop()
 
+    height=0,
+)
 
 # -----------------------------
 # UI Display Functions
@@ -304,7 +286,7 @@ def display_password_page(mode="set"):
                     else:
                         st.session_state.step = "login"
                     st.rerun()
-            
+                
             if mode == "set":
                 if st.button("⬅️ กลับไปหน้าล็อกอิน", use_container_width=True):
                     st.session_state.step = "login"
@@ -456,58 +438,20 @@ def display_dashboard():
         st.button("🚪 ออกจากระบบ", on_click=logout, use_container_width=True, type="secondary")
 
 # -----------------------------
-# Main App Logic and Persistent Login
-# -----------------------------
-
-# Initialize user session state
-if "user" not in st.session_state:
-    st.session_state.user = None
-
-# Attempt to log in from browser's local storage
-if not st.session_state.user:
-    # This component runs JS to get the session_id from localStorage and reloads
-    # the page with the id as a URL parameter. This happens only once.
-    components.html(
-        """
-        <script>
-            const sessionId = localStorage.getItem('session_id');
-            const url = new URL(window.location.href);
-            // Only reload if session_id exists and is not already in the URL
-            if (sessionId && !url.searchParams.has('session_id')) {
-                url.searchParams.set('session_id', sessionId);
-                window.location.href = url.href;
-            }
-        </script>
-        """,
-        height=0
-    )
-    # Check if the reload has added the session_id to the URL
-    query_params = st.query_params
-    session_id_from_url = query_params.get("session_id")
-    if session_id_from_url:
-        user_data = check_session(session_id_from_url)
-        if user_data:
-            # If session is valid, log the user in
-            st.session_state.user = user_data["name"]
-            st.session_state.phone = user_data["phone"]
-            st.session_state.session_id = session_id_from_url
-            st.session_state.step = "dashboard"
-            
-            # Clean the URL by removing the session_id parameter
-            components.html("""
-                <script>
-                    const url = new URL(window.parent.location.href);
-                    url.searchParams.delete('session_id');
-                    window.parent.history.replaceState(null, '', url);
-                </script>
-            """, height=0)
-            st.rerun() # Rerun to reflect the logged-in state immediately
-
-# -----------------------------
-# Page Router
+# Main App Logic
 # -----------------------------
 if "step" not in st.session_state:
     st.session_state.step = "login"
+
+# Check if there's a valid session from local storage on every rerun
+session_id_from_local_storage = st.session_state.get("session_id_hidden")
+if session_id_from_local_storage:
+    user_data = check_session(session_id_from_local_storage)
+    if user_data:
+        st.session_state.user = user_data["name"]
+        st.session_state.phone = user_data["phone"]
+        st.session_state.session_id = session_id_from_local_storage
+        st.session_state.step = "dashboard"
 
 if st.session_state.step == "login":
     display_login_page()
