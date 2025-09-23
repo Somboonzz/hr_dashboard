@@ -461,49 +461,43 @@ def display_dashboard():
         st.button("🚪 ออกจากระบบ", on_click=logout, use_container_width=True, type="secondary")
 
 # -----------------------------
-# Main App Logic and Persistent Login
-# -----------------------------
-
-# Initialize session state keys if they don't exist to prevent errors
 # -----------------------------
 # Main App Logic and Persistent Login
 # -----------------------------
 
-# Initial session state setup
 if "user" not in st.session_state:
     st.session_state.user = None
 if "step" not in st.session_state:
     st.session_state.step = "login"
+if "session_id" not in st.session_state:
+    st.session_state.session_id = None
 
 # -----------------------------
-# Try auto-login with session_id from URL or localStorage
+# Try auto-login
 # -----------------------------
+query_params = st.query_params
+session_id_from_url = query_params.get("session_id")
+
 if not st.session_state.user:
-    query_params = st.query_params
-    session_id_from_url = query_params.get("session_id")
-
     if session_id_from_url:
-        # ถ้ามีค่า session_id ใน URL
+        # query_params จะคืน list เสมอ → ต้องเลือกตัวแรก
         if isinstance(session_id_from_url, list):
-            session_id_from_url = session_id_from_url[0]  # ดึงตัวแรก
+            session_id_from_url = session_id_from_url[0]
 
         user_data = check_session(session_id_from_url)
         if user_data:
-            # เจอ session ที่ Firestore → login อัตโนมัติ
             st.session_state.user = user_data["name"]
             st.session_state.phone = user_data["phone"]
             st.session_state.session_id = session_id_from_url
             st.session_state.step = "dashboard"
-
-            # ลบ query params ออกเพื่อไม่ให้ reload loop
+            # ล้าง query param ทิ้งกัน loop
             st.query_params.clear()
             st.rerun()
         else:
-            # session_id ใช้ไม่ได้ → ล้าง
             st.query_params.clear()
             st.session_state.step = "login"
     else:
-        # inject JS ให้เอา session_id จาก localStorage มายัดใน URL
+        # inject JS → ดึง session_id จาก localStorage แล้ว reload
         components.html(
             """
             <script>
@@ -512,7 +506,7 @@ if not st.session_state.user:
                     const url = new URL(window.location.href);
                     if (!url.searchParams.has('session_id')) {
                         url.searchParams.set('session_id', sessionId);
-                        window.location.replace(url.toString());  
+                        window.location.replace(url.toString());
                     }
                 }
             </script>
