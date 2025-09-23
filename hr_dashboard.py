@@ -461,7 +461,6 @@ def display_dashboard():
         st.button("🚪 ออกจากระบบ", on_click=logout, use_container_width=True, type="secondary")
 
 # -----------------------------
-# -----------------------------
 # Main App Logic and Persistent Login
 # -----------------------------
 
@@ -473,39 +472,42 @@ if "session_id" not in st.session_state:
     st.session_state.session_id = None
 
 # -----------------------------
-# Try auto-login
+# Auto-login if session_id exists
 # -----------------------------
 query_params = st.query_params
 session_id_from_url = query_params.get("session_id")
 
 if not st.session_state.user:
     if session_id_from_url:
-        # query_params จะคืน list เสมอ → ต้องเลือกตัวแรก
+        # query_params คืนเป็น list → ต้องดึงตัวแรก
         if isinstance(session_id_from_url, list):
             session_id_from_url = session_id_from_url[0]
 
         user_data = check_session(session_id_from_url)
         if user_data:
+            # ✅ login สำเร็จ
             st.session_state.user = user_data["name"]
             st.session_state.phone = user_data["phone"]
             st.session_state.session_id = session_id_from_url
             st.session_state.step = "dashboard"
-            # ล้าง query param ทิ้งกัน loop
+
+            # ล้าง query param กัน loop
             st.query_params.clear()
             st.rerun()
         else:
+            # session_id ใช้ไม่ได้ → ลบออกแล้วกลับไปหน้า login
             st.query_params.clear()
             st.session_state.step = "login"
     else:
-        # inject JS → ดึง session_id จาก localStorage แล้ว reload
+        # inject JS → ถ้ามี session_id ใน localStorage → reload พร้อมแนบ session_id
         components.html(
             """
             <script>
-                const sessionId = localStorage.getItem('session_id');
+                const sessionId = localStorage.getItem("session_id");
                 if (sessionId) {
                     const url = new URL(window.location.href);
-                    if (!url.searchParams.has('session_id')) {
-                        url.searchParams.set('session_id', sessionId);
+                    if (!url.searchParams.has("session_id")) {
+                        url.searchParams.set("session_id", sessionId);
                         window.location.replace(url.toString());
                     }
                 }
@@ -513,6 +515,7 @@ if not st.session_state.user:
             """,
             height=0
         )
+
 
 
 # -----------------------------
