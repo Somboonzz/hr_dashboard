@@ -472,36 +472,33 @@ if "step" not in st.session_state:
 
 # This block handles automatic login from browser's local storage
 if not st.session_state.user:
-    # Try to get session_id from URL parameters first
     query_params = st.query_params
-    session_id_from_url = query_params.get("session_id")
-    
+    session_id_from_url = query_params.get("session_id", [None])  # คืนค่า list เสมอ ต้องเลือกตัวแรก
+    session_id_from_url = session_id_from_url[0] if session_id_from_url else None
+
     if session_id_from_url:
         user_data = check_session(session_id_from_url)
         if user_data:
-            # If session from URL is valid, log the user in
             st.session_state.user = user_data["name"]
             st.session_state.phone = user_data["phone"]
             st.session_state.session_id = session_id_from_url
             st.session_state.step = "dashboard"
-            # Clear the query parameter from the URL and rerun
             st.query_params.clear()
             st.rerun()
         else:
-            # If session_id is invalid (e.g., expired), clear it and show login
+            # ถ้า session_id ใช้ไม่ได้ ล้างค่า
             st.query_params.clear()
             st.session_state.step = "login"
     else:
-        # If no session in URL, run JS to get it from localStorage and reload the page
+        # Inject JS ให้ดึงจาก localStorage
         components.html(
             """
             <script>
                 const sessionId = localStorage.getItem('session_id');
                 const url = new URL(window.location.href);
-                // Only reload if a session_id exists and it's not already in the URL
                 if (sessionId && !url.searchParams.has('session_id')) {
                     url.searchParams.set('session_id', sessionId);
-                    window.location.href = url.href;
+                    window.location.replace(url.href); // ใช้ replace() ไม่ใช่ href ป้องกัน loop
                 }
             </script>
             """,
