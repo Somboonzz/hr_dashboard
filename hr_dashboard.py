@@ -183,8 +183,8 @@ def check_session(session_id):
              user_phone = user_data_from_session["user_phone"]
              USERS_DB = load_user_db()
              if user_phone in USERS_DB:
-                 # Add phone to user data dict before returning
-                 user_info = USERS_DB[user_phone]
+                 # Return a COPY of the user data to avoid mutating the cache
+                 user_info = USERS_DB[user_phone].copy()
                  user_info['phone'] = user_phone
                  return user_info
     return None
