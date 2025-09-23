@@ -465,45 +465,61 @@ def display_dashboard():
 # -----------------------------
 
 # Initialize session state keys if they don't exist to prevent errors
+# -----------------------------
+# Main App Logic and Persistent Login
+# -----------------------------
+
+# Initial session state setup
 if "user" not in st.session_state:
     st.session_state.user = None
 if "step" not in st.session_state:
     st.session_state.step = "login"
 
-# This block handles automatic login from browser's local storage
+# -----------------------------
+# Try auto-login with session_id from URL or localStorage
+# -----------------------------
 if not st.session_state.user:
     query_params = st.query_params
-    session_id_from_url = query_params.get("session_id", [None])  # คืนค่า list เสมอ ต้องเลือกตัวแรก
-    session_id_from_url = session_id_from_url[0] if session_id_from_url else None
+    session_id_from_url = query_params.get("session_id")
 
     if session_id_from_url:
+        # ถ้ามีค่า session_id ใน URL
+        if isinstance(session_id_from_url, list):
+            session_id_from_url = session_id_from_url[0]  # ดึงตัวแรก
+
         user_data = check_session(session_id_from_url)
         if user_data:
+            # เจอ session ที่ Firestore → login อัตโนมัติ
             st.session_state.user = user_data["name"]
             st.session_state.phone = user_data["phone"]
             st.session_state.session_id = session_id_from_url
             st.session_state.step = "dashboard"
+
+            # ลบ query params ออกเพื่อไม่ให้ reload loop
             st.query_params.clear()
             st.rerun()
         else:
-            # ถ้า session_id ใช้ไม่ได้ ล้างค่า
+            # session_id ใช้ไม่ได้ → ล้าง
             st.query_params.clear()
             st.session_state.step = "login"
     else:
-        # Inject JS ให้ดึงจาก localStorage
+        # inject JS ให้เอา session_id จาก localStorage มายัดใน URL
         components.html(
             """
             <script>
                 const sessionId = localStorage.getItem('session_id');
-                const url = new URL(window.location.href);
-                if (sessionId && !url.searchParams.has('session_id')) {
-                    url.searchParams.set('session_id', sessionId);
-                    window.location.replace(url.href); // ใช้ replace() ไม่ใช่ href ป้องกัน loop
+                if (sessionId) {
+                    const url = new URL(window.location.href);
+                    if (!url.searchParams.has('session_id')) {
+                        url.searchParams.set('session_id', sessionId);
+                        window.location.replace(url.toString());  
+                    }
                 }
             </script>
             """,
             height=0
         )
+
 
 # -----------------------------
 # Page Router
