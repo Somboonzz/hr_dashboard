@@ -178,10 +178,15 @@ def check_session(session_id):
     session_ref = db.collection("sessions").document(session_id)
     session_doc = session_ref.get()
     if session_doc.exists:
-        user_phone = session_doc.to_dict()["user_phone"]
-        USERS_DB = load_user_db()
-        if user_phone in USERS_DB:
-            return USERS_DB[user_phone]
+        user_data_from_session = session_doc.to_dict()
+        if "user_phone" in user_data_from_session:
+             user_phone = user_data_from_session["user_phone"]
+             USERS_DB = load_user_db()
+             if user_phone in USERS_DB:
+                 # Add phone to user data dict before returning
+                 user_info = USERS_DB[user_phone]
+                 user_info['phone'] = user_phone
+                 return user_info
     return None
 
 def logout():
@@ -459,56 +464,53 @@ def display_dashboard():
 # Main App Logic and Persistent Login
 # -----------------------------
 
-# Initialize user session state
+# Initialize session state keys if they don't exist to prevent errors
 if "user" not in st.session_state:
     st.session_state.user = None
+if "step" not in st.session_state:
+    st.session_state.step = "login"
 
-# Attempt to log in from browser's local storage
+# This block handles automatic login from browser's local storage
 if not st.session_state.user:
-    # This component runs JS to get the session_id from localStorage and reloads
-    # the page with the id as a URL parameter. This happens only once.
-    components.html(
-        """
-        <script>
-            const sessionId = localStorage.getItem('session_id');
-            const url = new URL(window.location.href);
-            // Only reload if session_id exists and is not already in the URL
-            if (sessionId && !url.searchParams.has('session_id')) {
-                url.searchParams.set('session_id', sessionId);
-                window.location.href = url.href;
-            }
-        </script>
-        """,
-        height=0
-    )
-    # Check if the reload has added the session_id to the URL
+    # Try to get session_id from URL parameters first
     query_params = st.query_params
     session_id_from_url = query_params.get("session_id")
+    
     if session_id_from_url:
         user_data = check_session(session_id_from_url)
         if user_data:
-            # If session is valid, log the user in
+            # If session from URL is valid, log the user in
             st.session_state.user = user_data["name"]
             st.session_state.phone = user_data["phone"]
             st.session_state.session_id = session_id_from_url
             st.session_state.step = "dashboard"
-            
-            # Clean the URL by removing the session_id parameter
-            components.html("""
-                <script>
-                    const url = new URL(window.parent.location.href);
-                    url.searchParams.delete('session_id');
-                    window.parent.history.replaceState(null, '', url);
-                </script>
-            """, height=0)
-            st.rerun() # Rerun to reflect the logged-in state immediately
+            # Clear the query parameter from the URL and rerun
+            st.query_params.clear()
+            st.rerun()
+        else:
+            # If session_id is invalid (e.g., expired), clear it and show login
+            st.query_params.clear()
+            st.session_state.step = "login"
+    else:
+        # If no session in URL, run JS to get it from localStorage and reload the page
+        components.html(
+            """
+            <script>
+                const sessionId = localStorage.getItem('session_id');
+                const url = new URL(window.location.href);
+                // Only reload if a session_id exists and it's not already in the URL
+                if (sessionId && !url.searchParams.has('session_id')) {
+                    url.searchParams.set('session_id', sessionId);
+                    window.location.href = url.href;
+                }
+            </script>
+            """,
+            height=0
+        )
 
 # -----------------------------
 # Page Router
 # -----------------------------
-if "step" not in st.session_state:
-    st.session_state.step = "login"
-
 if st.session_state.step == "login":
     display_login_page()
 elif st.session_state.step == "set_password":
@@ -517,5 +519,10 @@ elif st.session_state.step == "change_password":
     display_password_page(mode="change")
 elif st.session_state.step == "forgot_password":
     display_forgot_password_page()
-elif st.session_state.step == "dashboard":
+elif st.session_state.step == "dashboard" and st.session_state.user:
     display_dashboard()
+else:
+    # Fallback to login page if state is inconsistent
+    st.session_state.step = "login"
+    display_login_page()
+
