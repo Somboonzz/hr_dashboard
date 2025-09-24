@@ -16,8 +16,8 @@ import time
 # Page Setup and Styling
 # -----------------------------
 st.set_page_config(
-    page_title="HR Dashboard",
-    page_icon="📊",
+    page_title="เช็ค ขาด ลา สาย",
+    page_icon="c:\Users\boon\OneDrive\รูปภาพ\Screenshots\สกรีนช็อต 2025-09-24 115552.png",
     layout="wide"
 )
 
