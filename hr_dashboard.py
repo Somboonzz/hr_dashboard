@@ -269,18 +269,20 @@ def display_login_page():
                         st.session_state.phone = phone
                         session_id = create_session(phone)
                         
-                        # Save session ID to browser's local storage via JS
+                        # Save session ID to browser's local storage via JS and then reload
+                        # This is more reliable than using time.sleep() and st.rerun()
                         components.html(f"""
                             <script>
                                 localStorage.setItem('session_id', '{session_id}');
+                                window.parent.location.href = window.parent.location.pathname;
                             </script>
                             """, height=0)
                         
                         st.session_state.session_id = session_id
                         st.session_state.step = "dashboard"
                         st.success("เข้าสู่ระบบสำเร็จ!")
-                        time.sleep(1) # Give JS time to save before rerun
-                        st.rerun()
+                        # Stop the current script run to let the browser reload
+                        st.stop()
                     else:
                         st.error("รหัสผ่านไม่ถูกต้อง")
                 else:
@@ -445,11 +447,11 @@ def display_dashboard():
         x=alt.X('จำนวนวัน/ครั้ง:Q', title='จำนวน (วัน/ครั้ง)'),
         y=alt.Y('ประเภท:N', title='ประเภท', sort='-x'),
         color=alt.Color('ประเภท:N', 
-                         scale=alt.Scale(
-                             domain=['ลาป่วย/ลากิจ', 'ขาด', 'สาย', 'พักผ่อน'],
-                             range=['#FFC300', '#C70039', '#FF5733', '#33C1FF']
-                         ),
-                         legend=None),
+                        scale=alt.Scale(
+                            domain=['ลาป่วย/ลากิจ', 'ขาด', 'สาย', 'พักผ่อน'],
+                            range=['#FFC300', '#C70039', '#FF5733', '#33C1FF']
+                        ),
+                        legend=None),
         tooltip=['ประเภท', 'จำนวนวัน/ครั้ง']
     ).properties(title='กราฟเปรียบเทียบข้อมูล')
     st.altair_chart(chart, use_container_width=True)
