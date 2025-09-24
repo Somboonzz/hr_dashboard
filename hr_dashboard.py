@@ -51,9 +51,12 @@ def format_time(dt):
 # -----------------------------
 # Data Handling
 # -----------------------------
-@st.cache_data
-def load_data(file_path="attendances.xlsx"):
-    """Loads data from an Excel or CSV file and returns a DataFrame."""
+@st.cache_data(ttl=600)
+def load_data(file_path="attendances.xlsx", file_mod_time=None):
+    """Loads data from an Excel or CSV file and returns a DataFrame.
+    
+    The 'file_mod_time' argument is a cache bust key to reload data when the file changes.
+    """
     file_extension = os.path.splitext(file_path)[1].lower()
     
     if not os.path.exists(file_path):
@@ -407,7 +410,13 @@ def display_dashboard():
     st.header("📊 แดชบอร์ดสรุปข้อมูล")
     st.subheader(f"**{st.session_state.user}**")
 
-    df_full = load_data()
+    # Get file modification timestamp to use as a cache bust key
+    file_path = "attendances.xlsx"
+    file_mod_time = None
+    if os.path.exists(file_path):
+        file_mod_time = os.path.getmtime(file_path)
+    
+    df_full = load_data(file_path, file_mod_time)
 
     if not df_full.empty and 'วันที่' in df_full.columns:
         df_full_cleaned = df_full.dropna(subset=['วันที่'])
@@ -551,4 +560,3 @@ else:
     # Fallback to login page if state is inconsistent
     st.session_state.step = "login"
     display_login_page()
-
