@@ -238,7 +238,7 @@ def logout():
 def display_login_page():
     """Displays the login form."""
     USERS_DB = load_user_db()
-    st.title("⏰ เช็ค ขาด ลา สาย")
+    st.title("⏰ เช็ค ขาด ลา มาสาย")
     st.markdown("กรุณาเข้าสู่ระบบเพื่อดูข้อมูลของคุณ")
     col1, col2, col3 = st.columns([1, 1.5, 1])
 
