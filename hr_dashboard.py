@@ -154,9 +154,15 @@ def create_session(user_phone):
     db = firestore.client()
     session_id = str(uuid.uuid4())
     session_ref = db.collection("sessions").document(session_id)
+    
+    # Set expiration for 7 days from now
+    now_utc = datetime.datetime.now(pytz.utc)
+    expires_at = now_utc + datetime.timedelta(days=7)
+    
     session_ref.set({
         "user_phone": user_phone,
-        "created_at": firestore.SERVER_TIMESTAMP
+        "created_at": firestore.SERVER_TIMESTAMP,
+        "expires_at": expires_at
     })
     return session_id
 
@@ -171,22 +177,36 @@ def delete_session(session_id):
 
 
 def check_session(session_id):
-    """Checks for a valid session in Firestore."""
+    """Checks for a valid session in Firestore and validates its expiration."""
     if not session_id:
         return None
     db = firestore.client()
     session_ref = db.collection("sessions").document(session_id)
     session_doc = session_ref.get()
+
     if session_doc.exists:
-        user_data_from_session = session_doc.to_dict()
-        if "user_phone" in user_data_from_session:
-             user_phone = user_data_from_session["user_phone"]
-             USERS_DB = load_user_db()
-             if user_phone in USERS_DB:
-                 # Return a COPY of the user data to avoid mutating the cache
-                 user_info = USERS_DB[user_phone].copy()
-                 user_info['phone'] = user_phone
-                 return user_info
+        session_data = session_doc.to_dict()
+        expires_at = session_data.get("expires_at")
+
+        # Firestore returns a datetime object. We need to ensure it's timezone-aware for comparison.
+        if isinstance(expires_at, datetime.datetime) and expires_at.tzinfo is None:
+            expires_at = expires_at.replace(tzinfo=pytz.utc)
+
+        now_utc = datetime.datetime.now(pytz.utc)
+
+        if expires_at and expires_at < now_utc:
+            # Session has expired, delete it from the backend.
+            delete_session(session_id)
+            return None # Signal that the session is invalid/expired
+
+        # If not expired, proceed with user data retrieval
+        if "user_phone" in session_data:
+            user_phone = session_data["user_phone"]
+            USERS_DB = load_user_db()
+            if user_phone in USERS_DB:
+                user_info = USERS_DB[user_phone].copy()
+                user_info['phone'] = user_phone
+                return user_info
     return None
 
 def logout():
@@ -464,59 +484,55 @@ def display_dashboard():
 # Main App Logic and Persistent Login
 # -----------------------------
 
+# Initialize session state keys if they don't exist to prevent errors
 if "user" not in st.session_state:
     st.session_state.user = None
 if "step" not in st.session_state:
     st.session_state.step = "login"
-if "session_id" not in st.session_state:
-    st.session_state.session_id = None
 
-# -----------------------------
-# Auto-login if session_id exists
-# -----------------------------
-query_params = st.query_params
-session_id_from_url = query_params.get("session_id")
-
+# This block handles automatic login from browser's local storage
 if not st.session_state.user:
+    # Try to get session_id from URL parameters first
+    query_params = st.query_params
+    session_id_from_url = query_params.get("session_id")
+    
     if session_id_from_url:
-        # query_params คืนเป็น list → ต้องดึงตัวแรก
-        if isinstance(session_id_from_url, list):
-            session_id_from_url = session_id_from_url[0]
-
         user_data = check_session(session_id_from_url)
         if user_data:
-            # ✅ login สำเร็จ
+            # If session from URL is valid, log the user in
             st.session_state.user = user_data["name"]
             st.session_state.phone = user_data["phone"]
             st.session_state.session_id = session_id_from_url
             st.session_state.step = "dashboard"
-
-            # ล้าง query param กัน loop
+            # Clear the query parameter from the URL and rerun
             st.query_params.clear()
             st.rerun()
         else:
-            # session_id ใช้ไม่ได้ → ลบออกแล้วกลับไปหน้า login
+            # If session_id is invalid (e.g., expired), clear it and show login
             st.query_params.clear()
             st.session_state.step = "login"
+            # Also clear the client-side storage to prevent reload loops
+            components.html("""
+                <script>
+                    localStorage.removeItem('session_id');
+                </script>
+            """, height=0)
     else:
-        # inject JS → ถ้ามี session_id ใน localStorage → reload พร้อมแนบ session_id
+        # If no session in URL, run JS to get it from localStorage and reload the page
         components.html(
             """
             <script>
-                const sessionId = localStorage.getItem("session_id");
-                if (sessionId) {
-                    const url = new URL(window.location.href);
-                    if (!url.searchParams.has("session_id")) {
-                        url.searchParams.set("session_id", sessionId);
-                        window.location.replace(url.toString());
-                    }
+                const sessionId = localStorage.getItem('session_id');
+                const url = new URL(window.location.href);
+                // Only reload if a session_id exists and it's not already in the URL
+                if (sessionId && !url.searchParams.has('session_id')) {
+                    url.searchParams.set('session_id', sessionId);
+                    window.location.href = url.href;
                 }
             </script>
             """,
             height=0
         )
-
-
 
 # -----------------------------
 # Page Router
